@@ -1,14 +1,10 @@
 [project]
 name = "batteries-included"
-version = "0.1.0"
-description = "Add your description here"
+version = "v0.1.0-alpha"
+description = "A lightweight Python package that calculates the optimal battery dispatch based on an exogenous price profile."
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = [
-    "highspy>=1.11.0",
-    "linopy>=0.5.5",
-    "plotext>=5.3.2",
-]
+dependencies = ["highspy>=1.11.0", "linopy>=0.5.5", "plotext>=5.3.2"]
 
 
 [project.optional-dependencies]
