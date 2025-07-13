@@ -116,8 +116,12 @@ def build_dispatch(battery: Battery, price: TimeSeries[EURperkWh]) -> linopy.Mod
 @dataclass
 class Extractor:
     model: linopy.Model
+    solve: bool = True
 
     def __post_init__(self):
+        if self.solve:
+            self.model.solve(output_flag=False)
+
         assert self.model.status == "ok"
 
     def profit(self) -> float:

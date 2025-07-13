@@ -41,7 +41,6 @@ def test_build_dispatch():
 
 def test_extractor():
     model = build_dispatch(battery=create_battery(), price=create_prices())
-    model.solve(output_flag=False)
     extractor = Extractor(model)
 
     for variable in Variables:
