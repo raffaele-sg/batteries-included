@@ -4,44 +4,42 @@ from datetime import datetime, timedelta
 from math import pi, sin
 from typing import NamedTuple, Sequence, Type
 
-import numpy as np
-
 kW = float
 kWh = float
 EURperkWh = float
 
 
-class BatteryState(NamedTuple):
+class State(NamedTuple):
     soc: float  # State of charge, [0.0, 1.0]
 
     @classmethod
-    def example(cls: Type[BatteryState]):
+    def example(cls: Type[State]):
         return cls(soc=0.5)
 
 
-class BatteryParameters(NamedTuple):
+class Parameters(NamedTuple):
     duration: timedelta  # The time it takes to fully discharge the battery
     power: kW  # represents both, charging and discharing, in kW
     efficiency: float  # Share of energy losses
 
     @classmethod
-    def example(cls: Type[BatteryParameters]):
+    def example(cls: Type[Parameters]):
         return cls(duration=timedelta(hours=2), efficiency=0.5**2, power=2.0)
 
 
 class Battery(NamedTuple):
-    state: BatteryState
-    parameters: BatteryParameters
+    state: State
+    parameters: Parameters
 
     @classmethod
     def example(cls: Type[Battery]):
-        return cls(state=BatteryState.example(), parameters=BatteryParameters.example())
+        return cls(state=State.example(), parameters=Parameters.example())
 
 
 class TimeSeries[T](NamedTuple):
     start: datetime | None
     resolution: timedelta
-    values: Sequence[T] | np.typing.NDArray[np.float64]
+    values: Sequence[T]
 
     @classmethod
     def example(cls: Type[TimeSeries[float]]):

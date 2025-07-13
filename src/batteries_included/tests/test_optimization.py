@@ -6,8 +6,8 @@ import numpy as np
 
 from batteries_included.model import (
     Battery,
-    BatteryParameters,
-    BatteryState,
+    Parameters,
+    State,
     TimeSeries,
 )
 from batteries_included.optimization import (
@@ -20,8 +20,8 @@ from batteries_included.optimization import (
 
 def create_battery():
     return Battery(
-        state=BatteryState(soc=0.5),
-        parameters=BatteryParameters(
+        state=State(soc=0.5),
+        parameters=Parameters(
             duration=timedelta(hours=2),
             power=2.0,
             efficiency=0.9,
