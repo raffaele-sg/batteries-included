@@ -12,6 +12,7 @@ from batteries_included.model import (
 )
 from batteries_included.optimization import (
     Extractor,
+    Metadata,
     Variables,
     build_dispatch,
 )
@@ -37,13 +38,15 @@ def create_prices():
 
 
 def test_build_dispatch():
-    model = build_dispatch(battery=create_battery(), price=create_prices())
+    metadata, model = build_dispatch(battery=create_battery(), price=create_prices())
+
+    assert isinstance(metadata, Metadata)
     assert isinstance(model, linopy.Model)
 
 
 def test_extractor():
-    model = build_dispatch(battery=create_battery(), price=create_prices())
-    extractor = Extractor(model)
+    metadata, model = build_dispatch(battery=create_battery(), price=create_prices())
+    extractor = Extractor(model=model, metadata=metadata)
 
     for variable in Variables:
         array = extractor.to_numpy(variable=variable)
@@ -59,3 +62,6 @@ def test_extractor_from_inputs():
     for variable in Variables:
         array = extractor.to_numpy(variable=variable)
         assert isinstance(array, np.ndarray)
+
+        timeseries = extractor.to_timeseries(variable=variable)
+        assert isinstance(timeseries, TimeSeries)

@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from math import pi, sin
 from typing import NamedTuple, Sequence, Type
 
+import numpy as np
+
 kW = float
 kWh = float
 EURperkWh = float
@@ -39,7 +41,7 @@ class Battery(NamedTuple):
 class TimeSeries[T](NamedTuple):
     start: datetime | None
     resolution: timedelta
-    values: Sequence[T]
+    values: Sequence[T] | np.typing.NDArray[np.float64]
 
     @classmethod
     def example(cls: Type[TimeSeries[float]]):

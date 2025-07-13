@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from enum import Enum
+from typing import NamedTuple
 
 import linopy
 import numpy as np
@@ -17,9 +18,16 @@ class Variables(Enum):
     level = "level"
 
 
+class Metadata(NamedTuple):
+    start: datetime | None
+    resolution: timedelta
+
+
 def build_dispatch(
-    battery: Battery, price: TimeSeries[EURperkWh], bidirectional_dispatch: bool = False
-) -> linopy.Model:
+    battery: Battery,
+    price: TimeSeries[EURperkWh],
+    bidirectional_dispatch: bool = False,
+) -> tuple[Metadata, linopy.Model]:
     m = linopy.Model()
     time = pd.Index(np.arange(len(price.values)), name="time")
 
@@ -89,18 +97,19 @@ def build_dispatch(
     prices = np.array(price.values)
 
     m.add_objective(sell.dot(prices).sub(buy.dot(prices)), sense="max")
-    return m
+    return Metadata(start=price.start, resolution=price.resolution), m
 
 
 @dataclass
 class Extractor:
     model: linopy.Model
+    metadata: Metadata
     solve: bool = True
 
     @staticmethod
     def from_inputs(battery: Battery, price: TimeSeries[EURperkWh]) -> Extractor:
-        model = build_dispatch(battery=battery, price=price)
-        return Extractor(model=model)
+        metadata, model = build_dispatch(battery=battery, price=price)
+        return Extractor(model=model, metadata=metadata)
 
     def __post_init__(self):
         if self.solve:
@@ -117,3 +126,12 @@ class Extractor:
         x = self.model.solution.get(variable.value)
         assert x is not None
         return np.array(x.values, dtype=np.float64)
+
+    def to_timeseries(self, variable: Variables) -> TimeSeries[float]:
+        x = self.model.solution.get(variable.value)
+        assert x is not None
+        return TimeSeries(
+            start=self.metadata.start,
+            resolution=self.metadata.resolution,
+            values=self.to_numpy(variable=variable),
+        )
