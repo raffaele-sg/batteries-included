@@ -17,7 +17,7 @@ from main import (
 
 def create_battery():
     return Battery(
-        BatteryState(0.5),
+        state=BatteryState(soc=0.5),
         parameters=BatteryParameters(
             duration=timedelta(hours=2),
             power=2.0,
@@ -42,6 +42,17 @@ def test_build_dispatch():
 def test_extractor():
     model = build_dispatch(battery=create_battery(), price=create_prices())
     extractor = Extractor(model)
+
+    for variable in Variables:
+        array = extractor.to_numpy(variable=variable)
+        assert isinstance(array, np.ndarray)
+
+
+def test_extractor_from_inputs():
+    extractor = Extractor.from_inputs(
+        battery=create_battery(),
+        price=create_prices(),
+    )
 
     for variable in Variables:
         array = extractor.to_numpy(variable=variable)

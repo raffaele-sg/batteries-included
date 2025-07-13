@@ -118,6 +118,11 @@ class Extractor:
     model: linopy.Model
     solve: bool = True
 
+    @staticmethod
+    def from_inputs(battery: Battery, price: TimeSeries[EURperkWh]) -> Extractor:
+        model = build_dispatch(battery=battery, price=price)
+        return Extractor(model=model)
+
     def __post_init__(self):
         if self.solve:
             self.model.solve(output_flag=False)
