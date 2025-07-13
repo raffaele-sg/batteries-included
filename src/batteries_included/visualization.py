@@ -1,7 +1,7 @@
 import plotext as plt
 
-from src.model import Battery, TimeSeries
-from src.optimization import Extractor, Variables
+from batteries_included.model import Battery, TimeSeries
+from batteries_included.optimization import Extractor, Variables
 
 
 def show_in_terminal(battery: Battery, price: TimeSeries):

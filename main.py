@@ -1,5 +1,5 @@
-from src.model import Battery, TimeSeries
-from src.visualization import show_in_terminal
+from src.batteries_included.model import Battery, TimeSeries
+from src.batteries_included.visualization import show_in_terminal
 
 
 def main():

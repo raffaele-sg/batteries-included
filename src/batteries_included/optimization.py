@@ -8,7 +8,7 @@ import linopy
 import numpy as np
 import pandas as pd
 
-from src.model import Battery, EURperkWh, TimeSeries, kWh
+from batteries_included.model import Battery, EURperkWh, TimeSeries, kWh
 
 
 class Variables(Enum):

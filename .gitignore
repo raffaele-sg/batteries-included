@@ -6,6 +6,9 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
-.venv
-.vscode/settings.json
+# custom folders
+.venv*/
+.vscode/
+
+# Custom files
+quick_check.sh
