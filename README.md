@@ -4,7 +4,7 @@ This repository provides a lightweight Python package that optimizes battery dis
 # Quickstart
 ## Install
 ```bash
-pip install git+https://github.com/raffaele-sg/batteries-included.git
+pip install git+https://github.com/raffaele-sg/batteries-included.git@v0.1.0-alpha
 ```
 
 ## Usage
