@@ -2,6 +2,11 @@
 This repository provides a lightweight Python package that optimizes battery dispatch based on an exogenous price profile. The problem formulation is deliberately simple and standard, as the main goal was to experiment with new tools and design patterns. That said, if you're looking for a minimal package that solves this exact problem, feel free to use it.
 
 # Quickstart
+## Install
+```bash
+pip install git+https://github.com/raffaele-sg/batteries-included.git
+```
+
 ## Usage
 
 ```python
