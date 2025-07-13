@@ -1,11 +1,14 @@
 from __future__ import annotations
-import pandas as pd
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from enum import Enum
 from typing import NamedTuple, Sequence, Type
 
 import linopy
 import numpy as np
-from datetime import datetime, timedelta
-
+import pandas as pd
+import xarray
 
 kW = float
 kWh = float
@@ -53,6 +56,12 @@ class TimeSeries[T](NamedTuple):
         )
 
 
+class Variables(Enum):
+    buy = "buy"
+    sell = "sell"
+    level = "level"
+
+
 def build_dispatch(battery: Battery, price: TimeSeries[EURperkWh]) -> linopy.Model:
     m = linopy.Model()
     time = pd.Index(np.arange(len(price.values)), name="time")
@@ -64,20 +73,20 @@ def build_dispatch(battery: Battery, price: TimeSeries[EURperkWh]) -> linopy.Mod
     hours = price.resolution / timedelta(hours=1)
 
     buy: linopy.Variable = m.add_variables(
-        name="buy",
+        name=Variables.buy.value,
         lower=0.0,
         upper=battery.parameters.power,
         coords=[time],
     )
     sell: linopy.Variable = m.add_variables(
-        name="sell",
+        name=Variables.sell.value,
         lower=0.0,
         upper=battery.parameters.power,
         coords=[time],
     )
 
     level: linopy.Variable = m.add_variables(
-        name="level",
+        name=Variables.level.value,
         lower=0.0,
         upper=size,
         coords=[time],
@@ -98,13 +107,39 @@ def build_dispatch(battery: Battery, price: TimeSeries[EURperkWh]) -> linopy.Mod
         name="level",
     )
 
-    m.add_objective(sell.dot(price.values) - buy.dot(price.values), sense="max")  # type: ignore
+    prices = np.array(price.values)
+
+    m.add_objective(sell.dot(prices).sub(buy.dot(prices)), sense="max")
     return m
+
+
+@dataclass
+class Extractor:
+    model: linopy.Model
+
+    def __post_init__(self):
+        assert self.model.status == "ok"
+
+    def profit(self) -> float:
+        x = self.model.objective.value
+        assert x is not None
+        return float(x)
+
+    def to_numpy(self, variable: Variables) -> np.typing.NDArray[np.float64]:
+        x = self.model.solution.get(variable.value)
+        assert x is not None
+        return np.array(x.values, dtype=np.float64)
 
 
 def main():
     model = build_dispatch(battery=Battery.example(), price=TimeSeries.example())
     print(model.status)
+    model.solve(output_flag=False)
+    print(model.status)
+
+    x: xarray.Dataset = model.solution
+    print(type(x))
+    print(x.get("level"))
 
 
 if __name__ == "__main__":
