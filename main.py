@@ -1,20 +1,35 @@
-from __future__ import annotations
-
-import xarray
+import plotext as plt
 
 from src.model import Battery, TimeSeries
-from src.optimization import build_dispatch
+from src.optimization import Extractor, Variables
 
 
 def main():
-    model = build_dispatch(battery=Battery.example(), price=TimeSeries.example())
-    print(model.status)
-    model.solve(output_flag=False)
-    print(model.status)
+    price = TimeSeries.example()
+    battery = Battery.example()
 
-    x: xarray.Dataset = model.solution
-    print(type(x))
-    print(x.get("level"))
+    extractor = Extractor.from_inputs(
+        battery=battery,
+        price=price,
+    )
+
+    plt.subplots(2, 1)
+
+    plt.subplot(1, 1)
+    plt.title("Battery dispatch")
+    plt.bar(extractor.to_numpy(variable=Variables.buy).round(5), label="buy")
+    plt.bar(-extractor.to_numpy(variable=Variables.sell).round(5), label="sell")
+    plt.plot(
+        extractor.to_numpy(variable=Variables.level).round(5),
+        label="level",
+        color="black",
+    )
+
+    plt.subplot(2, 1)
+    plt.title("Electricity price")
+    plt.plot(price.values, label="price")
+
+    plt.show()
 
 
 if __name__ == "__main__":

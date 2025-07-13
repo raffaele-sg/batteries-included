@@ -17,7 +17,9 @@ class Variables(Enum):
     level = "level"
 
 
-def build_dispatch(battery: Battery, price: TimeSeries[EURperkWh]) -> linopy.Model:
+def build_dispatch(
+    battery: Battery, price: TimeSeries[EURperkWh], bidirectional_dispatch: bool = False
+) -> linopy.Model:
     m = linopy.Model()
     time = pd.Index(np.arange(len(price.values)), name="time")
 
@@ -46,6 +48,22 @@ def build_dispatch(battery: Battery, price: TimeSeries[EURperkWh]) -> linopy.Mod
         upper=size,
         coords=[time],
     )
+
+    if not bidirectional_dispatch:
+        can_sell: linopy.Variable = m.add_variables(
+            name="can_sell",
+            binary=True,
+            coords=[time],
+        )
+
+        can_buy = -can_sell + 1
+
+        m.add_constraints(
+            lhs=buy - can_buy.mul(battery.parameters.power), sign="<=", rhs=0
+        )
+        m.add_constraints(
+            lhs=sell - can_sell * battery.parameters.power, sign="<=", rhs=0
+        )
 
     charge = buy.mul(battery.parameters.efficiency**0.5)
     discharge = sell.div(battery.parameters.efficiency**0.5)
