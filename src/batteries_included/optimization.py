@@ -51,7 +51,6 @@ def build_dispatch(
 
     if not bidirectional_dispatch:
         can_sell: linopy.Variable = m.add_variables(
-            name="can_sell",
             binary=True,
             coords=[time],
         )
