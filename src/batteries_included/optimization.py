@@ -133,5 +133,5 @@ class Extractor:
         return TimeSeries(
             start=self.metadata.start,
             resolution=self.metadata.resolution,
-            values=self.to_numpy(variable=variable),
+            values=self.to_numpy(variable=variable).tolist(),
         )
