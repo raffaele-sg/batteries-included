@@ -20,10 +20,6 @@ from batteries_included.model import (
 )
 from batteries_included.optimization import Extractor, Variables
 
-# from batteries_included.visualization import show_in_terminal
-# price = TimeSeries.example()
-# battery = Battery.example()
-# show_in_terminal(battery=battery, price=price)
 
 # Define a price series
 price = TimeSeries(
