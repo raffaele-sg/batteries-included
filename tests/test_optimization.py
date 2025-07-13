@@ -4,12 +4,9 @@ from math import pi, sin
 import linopy
 import numpy as np
 
-from main import (
-    Battery,
-    BatteryParameters,
-    BatteryState,
+from src.model import Battery, BatteryParameters, BatteryState, TimeSeries
+from src.optimization import (
     Extractor,
-    TimeSeries,
     Variables,
     build_dispatch,
 )
