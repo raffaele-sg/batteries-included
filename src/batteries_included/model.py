@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from math import pi, sin
 from typing import NamedTuple, Sequence, Type
 
 kW = float
@@ -45,5 +46,5 @@ class TimeSeries[T](NamedTuple):
         return cls(
             start=None,
             resolution=timedelta(minutes=30),
-            values=[float(i) for i in range(-10, 10)],
+            values=[sin(pi * 2 * i / 48) for i in range(48)],
         )
