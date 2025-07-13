@@ -1,0 +1,11 @@
+[project]
+name = "batteries-included"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "highspy>=1.11.0",
+    "linopy>=0.5.5",
+    "pytest>=8.4.1",
+]
