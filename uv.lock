@@ -10,7 +10,6 @@ dependencies = [
     { name = "highspy" },
     { name = "linopy" },
     { name = "plotext" },
-    { name = "pytest" },
 ]
 
 [package.optional-dependencies]
@@ -23,7 +22,6 @@ requires-dist = [
     { name = "highspy", specifier = ">=1.11.0" },
     { name = "linopy", specifier = ">=0.5.5" },
     { name = "plotext", specifier = ">=5.3.2" },
-    { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest", marker = "extra == 'dev'" },
 ]
 provides-extras = ["dev"]
