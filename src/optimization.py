@@ -62,6 +62,13 @@ def build_dispatch(battery: Battery, price: TimeSeries[EURperkWh]) -> linopy.Mod
         name="level",
     )
 
+    m.add_constraints(
+        lhs=level.at[time[-1]],
+        sign="==",
+        rhs=battery.state.soc * size,
+        name="level (last)",
+    )
+
     prices = np.array(price.values)
 
     m.add_objective(sell.dot(prices).sub(buy.dot(prices)), sense="max")
