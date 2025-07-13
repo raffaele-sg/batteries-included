@@ -44,7 +44,7 @@ battery = Battery(
 )
 
 
-# Access the result of a model that is built solved under the hood
+# Access the result of a model that is built and solved under the hood
 extractor = Extractor.from_inputs(battery=battery, price=price)
 
 level = extractor.to_timeseries(variable=Variables.level)
