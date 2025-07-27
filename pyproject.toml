@@ -1,6 +1,6 @@
 [project]
 name = "batteries-included"
-version = "v0.1.0-alpha"
+version = "v0.1.1-alpha"
 description = "A lightweight Python package that calculates the optimal battery dispatch based on an exogenous price profile."
 readme = "README.md"
 requires-python = ">=3.13"
