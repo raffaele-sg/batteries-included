@@ -6,7 +6,7 @@ from batteries_included.model import (
     State,
     TimeSeries,
 )
-from batteries_included.optimization import Extractor, Variables
+from batteries_included.optimization import SimulationManager, Variables
 
 # from batteries_included.visualization import show_in_terminal
 # price = TimeSeries.example()
@@ -33,7 +33,7 @@ battery = Battery(
 
 
 # Access the result of a model that is built solved under the hood
-extractor = Extractor.from_inputs(battery=battery, price=price)
+extractor = SimulationManager.from_inputs(battery=battery, price=price)
 
 level = extractor.to_timeseries(variable=Variables.level)
 buy = extractor.to_timeseries(variable=Variables.buy)

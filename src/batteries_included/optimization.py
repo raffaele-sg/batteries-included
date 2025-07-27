@@ -104,15 +104,17 @@ def build_dispatch(
 
 
 @dataclass
-class Extractor:
+class SimulationManager:
     model: linopy.Model
     metadata: Metadata
     solve: bool = True
 
     @staticmethod
-    def from_inputs(battery: Battery, price: TimeSeries[EURperkWh]) -> Extractor:
+    def from_inputs(
+        battery: Battery, price: TimeSeries[EURperkWh]
+    ) -> SimulationManager:
         metadata, model = build_dispatch(battery=battery, price=price)
-        return Extractor(model=model, metadata=metadata)
+        return SimulationManager(model=model, metadata=metadata)
 
     def __post_init__(self):
         if self.solve:

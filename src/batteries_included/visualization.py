@@ -1,11 +1,11 @@
 import plotext as plt
 
 from batteries_included.model import Battery, TimeSeries
-from batteries_included.optimization import Extractor, Variables
+from batteries_included.optimization import SimulationManager, Variables
 
 
 def show_in_terminal(battery: Battery, price: TimeSeries):
-    extractor = Extractor.from_inputs(
+    extractor = SimulationManager.from_inputs(
         battery=battery,
         price=price,
     )

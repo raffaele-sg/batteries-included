@@ -11,8 +11,8 @@ from batteries_included.model import (
     TimeSeries,
 )
 from batteries_included.optimization import (
-    Extractor,
     Metadata,
+    SimulationManager,
     Variables,
     build_dispatch,
 )
@@ -46,7 +46,7 @@ def test_build_dispatch():
 
 def test_extractor():
     metadata, model = build_dispatch(battery=create_battery(), price=create_prices())
-    extractor = Extractor(model=model, metadata=metadata)
+    extractor = SimulationManager(model=model, metadata=metadata)
 
     for variable in Variables:
         array = extractor.to_numpy(variable=variable)
@@ -54,7 +54,7 @@ def test_extractor():
 
 
 def test_extractor_from_inputs():
-    extractor = Extractor.from_inputs(
+    extractor = SimulationManager.from_inputs(
         battery=create_battery(),
         price=create_prices(),
     )
