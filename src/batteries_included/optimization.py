@@ -96,7 +96,10 @@ def build_dispatch(
 
     prices = np.array(price.values)
 
-    m.add_objective(sell.dot(prices).sub(buy.dot(prices)), sense="max")
+    m.add_objective(
+        sell.dot(prices).sub(buy.dot(prices)) / (timedelta(hours=1) / price.resolution),
+        sense="max",
+    )
     return Metadata(start=price.start, resolution=price.resolution), m
 
 
