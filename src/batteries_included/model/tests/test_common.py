@@ -1,4 +1,4 @@
-from batteries_included.model import Battery, Parameters, State
+from batteries_included.model.common import Battery, Parameters, State
 
 
 def test_example():

@@ -1,12 +1,12 @@
 from datetime import timedelta
 
-from batteries_included.model import (
+from batteries_included.model.common import (
     Battery,
     Parameters,
     State,
     TimeSeries,
 )
-from batteries_included.optimization import SimulationManager, Variables
+from batteries_included.model.perfect_foresight import SimulationManager, Variables
 
 # from batteries_included.visualization import show_in_terminal
 # price = TimeSeries.example()

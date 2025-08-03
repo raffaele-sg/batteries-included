@@ -4,13 +4,13 @@ from math import pi, sin
 import linopy
 import numpy as np
 
-from batteries_included.model import (
+from batteries_included.model.common import (
     Battery,
     Parameters,
     State,
     TimeSeries,
 )
-from batteries_included.optimization import (
+from batteries_included.model.perfect_foresight import (
     Metadata,
     SimulationManager,
     Variables,
@@ -34,6 +34,14 @@ def create_prices():
         start=None,
         resolution=timedelta(minutes=15),
         values=[sin(pi * 2 * i / 96) for i in range(96)],
+    )
+
+
+def create_price_scenarios():
+    return TimeSeries(
+        start=None,
+        resolution=timedelta(minutes=15),
+        values=[(sin(pi * 2 * i / 96), 20.0) for i in range(96)],
     )
 
 

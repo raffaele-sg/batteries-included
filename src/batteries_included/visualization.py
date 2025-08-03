@@ -1,7 +1,7 @@
 import plotext as plt
 
-from batteries_included.model import Battery, TimeSeries
-from batteries_included.optimization import SimulationManager, Variables
+from batteries_included.model.common import Battery, TimeSeries
+from batteries_included.model.perfect_foresight import SimulationManager, Variables
 
 
 def show_in_terminal(battery: Battery, price: TimeSeries):

@@ -22,6 +22,9 @@ class Parameters(NamedTuple):
     power: kW  # represents both, charging and discharing, in kW
     efficiency: float  # Share of energy losses
 
+    def size(self) -> kWh:
+        return self.power * (self.duration / timedelta(hours=1))
+
     @classmethod
     def example(cls: Type[Parameters]):
         return cls(duration=timedelta(hours=2), efficiency=0.5**2, power=2.0)
