@@ -148,7 +148,7 @@ class ModelBuilder:
     @cached_property
     def _idx_scenario(self):
         """Scenario dimension"""
-        return pd.Index(self.price_scenarios.scenarios.keys(), name="scenario")
+        return self.price_scenarios.data_array.get_index("scenario")
 
     @cached_property
     def _idx_bid_attribute(self):
