@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from math import pi, sin
 
 import linopy
+import pytest
 
 from batteries_included.model.common import (
     Battery,
@@ -11,8 +12,10 @@ from batteries_included.model.common import (
 )
 from batteries_included.model.price_uncertainty import (
     ModelBuilder,
+    Position,
     PriceScenarios,
     Scenario,
+    Solution,
 )
 
 
@@ -75,29 +78,69 @@ def test_price_scenarios():
     assert values_dim2 == probabilities_dim1
 
 
-def test_model_builder():
-    mb = ModelBuilder(
+def crate_model_builder() -> ModelBuilder:
+    return ModelBuilder(
         battery=create_battery(),
         price_scenarios=create_price_scenarios_with_probaility(
             start=datetime(2020, 1, 1)
         ),
     )
-    assert isinstance(mb._model, linopy.Model)
 
+
+def test_model_builder():
+    model_builder = crate_model_builder()
+    assert isinstance(model_builder, ModelBuilder)
+
+    # Inner model builder parts
+    assert isinstance(model_builder._model, linopy.Model)
     for var in [
-        mb._var_level,
-        mb._var_bid_quantity,
-        mb._var_bid_price,
-        mb._var_bid_accepted,
-        mb._var_dispatch,
+        model_builder._var_level,
+        model_builder._var_bid_quantity,
+        model_builder._var_bid_price,
+        model_builder._var_bid_accepted,
+        model_builder._var_dispatch,
     ]:
         assert isinstance(var, linopy.Variable)
-        assert var is mb._model.variables[var.name]
+        assert var is model_builder._model.variables[var.name]
 
-    mb.constrain_storage_level()
-    mb.constrain_storage_level_end(0.5)
-    mb.add_objective()
-    mb.solve()
+    model_solved = model_builder.solve()
+    assert isinstance(model_solved, Solution)
+
+
+@pytest.fixture(scope="session")
+def solution() -> Solution:
+    return (
+        crate_model_builder()
+        .constrain_storage_level()
+        .constrain_storage_level_start(0.5)
+        .constrain_storage_level_end(0.5)
+        .constrain_imbalance()
+        .accept_all()
+        .constraint_bid_quantity_accepted()
+        .add_objective()
+        .solve()
+    )
+
+
+def test_model_solution(solution: Solution):
+    assert isinstance(solution, Solution)
+
+
+def test_model_quantity_balance(solution: Solution):
+    model_builder = solution._model_builder
+
+    imbalance = model_builder._var_imbalance.solution.sel(
+        {model_builder._idx_position.name: Position.long.value}
+    ) - model_builder._var_imbalance.solution.sel(
+        {model_builder._idx_position.name: Position.short.value}
+    )
+
+    quantity_accepted = model_builder._var_bid_quantity_accepted.solution
+
+    dispatch = model_builder._var_dispatch.solution
+
+    print(model_builder._model.status)
+    assert ((dispatch - quantity_accepted - imbalance) == 0.0).all().item()
 
 
 if __name__ == "__main__":

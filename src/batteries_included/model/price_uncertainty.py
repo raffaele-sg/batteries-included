@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -140,6 +142,14 @@ class ModelBuilder:
 
     _model: linopy.Model = field(default_factory=linopy.Model)
 
+    BIG_M: float = 1_000.0
+
+    def reset_model(self) -> ModelBuilder:
+        return ModelBuilder(
+            battery=self.battery,
+            price_scenarios=self.price_scenarios,
+        )
+
     @cached_property
     def _idx_time(self):
         """Time dimension"""
@@ -213,7 +223,7 @@ class ModelBuilder:
     @cached_property
     def _var_bid_quantity(self) -> linopy.Variable:
         """
-        Bid quantity places by time and direction
+        Bid quantity placed by time and direction
 
         Dims:
         - time
@@ -222,7 +232,23 @@ class ModelBuilder:
         return self._model.add_variables(
             name="bid quantity",
             lower=0.0,
+            upper=self.battery.parameters.power,
             coords=[self._idx_time, self._idx_direction],
+        )
+
+    @cached_property
+    def _var_bid_quantity_accepted(self) -> linopy.Variable:
+        """
+        Bid quantity accepted by time, direction, and scenario
+
+        Dims:
+        - time
+        - direction
+        - scenaro
+        """
+        return self._model.add_variables(
+            name="bid quantity accepted",
+            coords=[self._idx_time, self._idx_direction, self._idx_scenario],
         )
 
     @cached_property
@@ -350,6 +376,54 @@ class ModelBuilder:
         )
         return self
 
+    def accept_all(self) -> Self:
+        bid_accepted = self._var_bid_accepted
+        m = self._model
+        m.add_constraints(
+            lhs=bid_accepted,
+            sign="==",
+            rhs=1,
+            name="accept all",
+        )
+
+        return self
+
+    def constraint_bid_quantity_accepted(self) -> Self:
+        accepted = self._var_bid_accepted
+        bid_quantity_accepted = self._var_bid_quantity_accepted
+        bid_quantity = self._var_bid_quantity
+        M = self.BIG_M
+        m = self._model
+
+        m.add_constraints(
+            lhs=bid_quantity_accepted + M * accepted,
+            sign=">=",
+            rhs=0,
+            name="bidqa (a=0 -> gte 0)",
+        )
+        m.add_constraints(
+            lhs=bid_quantity_accepted - M * accepted,
+            sign="<=",
+            rhs=0,
+            name="bidqa (a=0 -> lte 0)",
+        )
+
+        m.add_constraints(
+            lhs=bid_quantity_accepted - bid_quantity + M * (-accepted + 1),
+            sign=">=",
+            rhs=0,
+            name="bidqa (a=0 -> gte bidq)",
+        )
+
+        m.add_constraints(
+            lhs=bid_quantity_accepted - bid_quantity - M * (-accepted + 1),
+            sign="<=",
+            rhs=0,
+            name="bidqa (a=0 -> lte bidq)",
+        )
+
+        return self
+
     def contrain_bids(self) -> Self:
         raise NotImplementedError("contrain_bids")
 
@@ -358,13 +432,15 @@ class ModelBuilder:
         probabilities = self.price_scenarios.probabilities
         prices = self.price_scenarios.values
 
+        bid_quantity_accepted = self._var_bid_quantity_accepted
+
         sell = slice_variable(
-            self._var_dispatch,
+            bid_quantity_accepted,
             dim_name=self._idx_direction.name,
             dim_value=BidDirection.sell.value,
         )
         buy = slice_variable(
-            self._var_dispatch,
+            bid_quantity_accepted,
             dim_name=self._idx_direction.name,
             dim_value=BidDirection.buy.value,
         )
@@ -385,15 +461,34 @@ class ModelBuilder:
     #     time_scaling = self.price_scenarios.resolution / timedelta(hours=1)
     #     return time_scaling * penalty * self._var_bid_accepted
 
+    def constrain_imbalance(self) -> Self:
+        imbalance = self._var_imbalance
+        m = self._model
+        dispatch = self._var_dispatch
+        bid_quantity_accepted = self._var_bid_quantity_accepted
+
+        m.add_constraints(
+            lhs=(
+                imbalance.sel({self._idx_position.name: Position.long.value})
+                - imbalance.sel({self._idx_position.name: Position.short.value})
+            )
+            - (dispatch - bid_quantity_accepted),
+            sign="==",
+            rhs=0,
+            name="imbalance (long)",
+        )
+        return self
+
     def imbalance_penalty(self, penalty: float):
         time_scaling = self.price_scenarios.resolution / timedelta(hours=1)
         imbalance = self._var_imbalance
+
         probabilities_xr = xr.DataArray(
             self.price_scenarios.probabilities,
             coords={self._idx_scenario.name: self._idx_scenario},
             dims=[self._idx_scenario.name],
         )
-        return time_scaling * penalty * (probabilities_xr * imbalance)
+        return time_scaling * (penalty) * (probabilities_xr * imbalance)
 
     def add_objective(self, penalty: float = 1000) -> Self:
         self._model.add_objective(
@@ -406,6 +501,11 @@ class ModelBuilder:
 
         return self
 
-    def solve(self) -> Self:
-        self._model.solve(output_flag=False)
-        return self
+    def solve(self) -> Solution:
+        self._model.solve(output_flag=True)
+        return Solution(self)
+
+
+@dataclass
+class Solution:
+    _model_builder: ModelBuilder
