@@ -96,7 +96,6 @@ def test_model_builder():
     for var in [
         model_builder._var_level,
         model_builder._var_bid_quantity,
-        model_builder._var_bid_price,
         model_builder._var_bid_accepted,
         model_builder._var_dispatch,
     ]:
@@ -115,9 +114,9 @@ def solution() -> Solution:
         .constrain_storage_level_start(0.5)
         .constrain_storage_level_end(0.5)
         .constrain_imbalance()
-        .accept_all()
-        .constraint_bid_quantity_accepted()
-        .add_objective()
+        .constrain_bid_quantity_accepted()
+        .constrain_bid_price()
+        .add_objective(penalty=100_000.0)
         .solve()
     )
 

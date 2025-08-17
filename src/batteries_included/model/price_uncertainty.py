@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from functools import cached_property
+from itertools import pairwise
 from typing import Any, Hashable, NamedTuple, Self
 
 import linopy
@@ -251,19 +252,19 @@ class ModelBuilder:
             coords=[self._idx_time, self._idx_direction, self._idx_scenario],
         )
 
-    @cached_property
-    def _var_bid_price(self) -> linopy.Variable:
-        """
-        Bid price placed by time and direction
+    # @cached_property
+    # def _var_bid_price(self) -> linopy.Variable:
+    #     """
+    #     Bid price placed by time and direction
 
-        Dims:
-        - time
-        - direction
-        """
-        return self._model.add_variables(
-            name="bid price",
-            coords=[self._idx_time, self._idx_direction],
-        )
+    #     Dims:
+    #     - time
+    #     - direction
+    #     """
+    #     return self._model.add_variables(
+    #         name="bid price",
+    #         coords=[self._idx_time, self._idx_direction],
+    #     )
 
     @cached_property
     def _var_imbalance(self) -> linopy.Variable:
@@ -388,11 +389,12 @@ class ModelBuilder:
 
         return self
 
-    def constraint_bid_quantity_accepted(self) -> Self:
+    def constrain_bid_quantity_accepted(self) -> Self:
         accepted = self._var_bid_accepted
         bid_quantity_accepted = self._var_bid_quantity_accepted
         bid_quantity = self._var_bid_quantity
-        M = self.BIG_M
+        # M = self.BIG_M
+        M = self.battery.parameters.power
         m = self._model
 
         m.add_constraints(
@@ -407,25 +409,124 @@ class ModelBuilder:
             rhs=0,
             name="bidqa (a=0 -> lte 0)",
         )
-
         m.add_constraints(
             lhs=bid_quantity_accepted - bid_quantity + M * (-accepted + 1),
             sign=">=",
             rhs=0,
-            name="bidqa (a=0 -> gte bidq)",
+            name="bidqa (a=1 -> gte bidq)",
         )
-
         m.add_constraints(
             lhs=bid_quantity_accepted - bid_quantity - M * (-accepted + 1),
             sign="<=",
             rhs=0,
-            name="bidqa (a=0 -> lte bidq)",
+            name="bidqa (a=1 -> lte bidq)",
         )
 
         return self
 
-    def contrain_bids(self) -> Self:
-        raise NotImplementedError("contrain_bids")
+    def constrain_bid_price(self) -> Self:
+        m = self._model
+        accepted = self._var_bid_accepted
+        # bid_quantity_accepted = self._var_bid_quantity_accepted
+        # bid_quantity = self._var_bid_quantity
+        # bid_price = self._var_bid_price
+        # M = 1
+        # TOLLERENCE = 0.01
+
+        # price = self.price_scenarios.data_array
+
+        # bid_price_sell = slice_variable(
+        #     bid_price,
+        #     dim_name=self._idx_direction.name,
+        #     dim_value=BidDirection.sell.value,
+        # )
+        # bid_price_buy = slice_variable(
+        #     bid_price,
+        #     dim_name=self._idx_direction.name,
+        #     dim_value=BidDirection.buy.value,
+        # )
+
+        # accepted_sell = slice_variable(
+        #     accepted,
+        #     dim_name=self._idx_direction.name,
+        #     dim_value=BidDirection.sell.value,
+        # )
+        # accepted_buy = slice_variable(
+        #     accepted,
+        #     dim_name=self._idx_direction.name,
+        #     dim_value=BidDirection.buy.value,
+        # )
+
+        # m.add_constraints(
+        #     lhs=bid_price_sell - price + M * accepted_sell,
+        #     sign=">=",
+        #     rhs=+TOLLERENCE,
+        #     name="pb sell (a=0 -> gte p)",
+        # )
+        # m.add_constraints(
+        #     lhs=bid_price_buy - price - M * accepted_buy,
+        #     sign="<=",
+        #     rhs=-TOLLERENCE,
+        #     name="pb buy (a=0 -> lte p)",
+        # )
+
+        # m.add_constraints(
+        #     lhs=bid_price_sell - price - M * (-accepted_sell + 1),
+        #     sign="<=",
+        #     rhs=0,
+        #     name="pb sell (a=1 -> lte p)",
+        # )
+
+        # m.add_constraints(
+        #     lhs=bid_price_buy - price + M * (-accepted_buy + 1),
+        #     sign=">=",
+        #     rhs=0,
+        #     name="pb sell (a=1 -> gte p)",
+        # )
+        scenario_coord_name = self._idx_scenario.name
+
+        price_scenarios = self.price_scenarios.data_array
+        scenario_coord_position = price_scenarios.get_axis_num(scenario_coord_name)
+
+        sorting_index = price_scenarios.argsort(scenario_coord_position).assign_coords(
+            {scenario_coord_name: range(len(price_scenarios[scenario_coord_name]))}
+        )
+
+        for a, b in pairwise(sorting_index.coords["scenario"].values):
+            idx_lower = sorting_index.sel({"scenario": a})
+            idx_upper = sorting_index.sel({"scenario": b})
+
+            # If a buy bid is accepted with a higher price, it must also be accepted with a lower price
+            m.add_constraints(
+                lhs=(
+                    accepted.sel({"direction": BidDirection.buy.value}).isel(
+                        {"scenario": idx_lower}
+                    )
+                    - accepted.sel({"direction": BidDirection.buy.value}).isel(
+                        {"scenario": idx_upper}
+                    )
+                ),
+                sign=">=",
+                rhs=0,
+                name=f"accepted buy order {a}-{b}",
+            )
+
+            # If a sell bid is accepted with a lower price, it must also be accepted with a higher price
+            m.add_constraints(
+                lhs=(
+                    accepted.sel({"direction": BidDirection.sell.value}).isel(
+                        {"scenario": idx_lower}
+                    )
+                    - accepted.sel({"direction": BidDirection.sell.value}).isel(
+                        {"scenario": idx_upper}
+                    )
+                ),
+                sign="<=",
+                rhs=0,
+                name=f"accepted sell order {a}-{b}",
+            )
+
+        return self
 
     def trade_profits(self) -> linopy.LinearExpression:
         time_scaling = self.price_scenarios.resolution / timedelta(hours=1)
@@ -502,7 +603,7 @@ class ModelBuilder:
         return self
 
     def solve(self) -> Solution:
-        self._model.solve(output_flag=True)
+        self._model.solve(output_flag=False)
         return Solution(self)
 
 
