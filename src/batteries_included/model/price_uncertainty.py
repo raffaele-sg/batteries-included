@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from functools import cached_property
 from itertools import pairwise
-from typing import Any, Hashable, Mapping, NamedTuple, Self
+from typing import Any, Hashable, Literal, Mapping, NamedTuple, Self, TypeVar, Union
 
 import linopy
 import numpy as np
@@ -26,10 +27,14 @@ class InconsistentPriceScenarios(Exception):
 
 fraction = float
 
+V = TypeVar("V", int, float)
+
 
 @dataclass
 class PriceScenarios[T]:
-    scenarios: dict[int | str, Scenario[TimeSeries[T]]]
+    scenarios: (
+        Mapping[Hashable, Scenario[TimeSeries[T]]] | dict[str, Scenario[TimeSeries[T]]]
+    )
 
     @cached_property
     def start(self) -> None | datetime:
@@ -230,7 +235,7 @@ class ModelBuilder:
         """
         return self._model.add_variables(
             name="bid quantity",
-            lower=self.battery.parameters.power * 0.05,
+            lower=0.0,
             upper=self.battery.parameters.power,
             coords=[self._idx_time, self._idx_direction],
         )
@@ -303,22 +308,32 @@ class ModelBuilder:
             coords=[self._idx_time, self._idx_scenario, self._idx_direction],
         )
 
-    def _constrain_storage_level_start(self, soc: fraction) -> Self:
-        assert 0.0 <= soc <= 1.0
+    def _constrain_storage_level_start(
+        self,
+        soc: tuple[Literal["==", ">=", "<="], fraction],
+    ) -> Self:
+        sign, _soc = soc
+        assert 0.0 <= _soc <= 1.0
+
         m = self._model
         level_initial = self._var_level_initial
         size = self.battery.parameters.size()
 
         m.add_constraints(
             lhs=level_initial,
-            sign="==",
-            rhs=soc * size,
+            sign=sign,
+            rhs=_soc * size,
             name="level (initial)",
         )
         return self
 
-    def _constrain_storage_level_end(self, soc: fraction) -> Self:
-        assert 0.0 <= soc <= 1.0
+    def _constrain_storage_level_end(
+        self,
+        soc: tuple[Literal["==", ">=", "<="], fraction],
+    ) -> Self:
+        sign, _soc = soc
+        assert 0.0 <= _soc <= 1.0
+
         m = self._model
         level = self._var_level
         time = self._idx_time
@@ -326,16 +341,16 @@ class ModelBuilder:
 
         m.add_constraints(
             lhs=level.loc[time[-1], :],
-            sign="==",
-            rhs=soc * size,
+            sign=sign,
+            rhs=_soc * size,
             name="level (last)",
         )
         return self
 
     def constrain_storage_level(
         self,
-        soc_start: None | float = None,
-        soc_end: None | float = None,
+        soc_start: None | tuple[Literal["==", ">=", "<="], fraction] = None,
+        soc_end: None | tuple[Literal["==", ">=", "<="], fraction] = None,
     ) -> Self:
         model = self._model
         level = self._var_level
@@ -379,16 +394,14 @@ class ModelBuilder:
         )
 
         if soc_start is not None:
-            assert 0 <= soc_start <= 1
             self._constrain_storage_level_start(soc_start)
 
         if soc_end is not None:
-            assert 0 <= soc_end <= 1
             self._constrain_storage_level_end(soc_end)
 
         return self
 
-    def accept_all(self) -> Self:
+    def _accept_all(self) -> Self:
         bid_accepted = self._var_bid_accepted
         m = self._model
         m.add_constraints(
@@ -400,7 +413,7 @@ class ModelBuilder:
 
         return self
 
-    def constrain_bid_quantity_accepted(self) -> Self:
+    def _constrain_bid_quantity_accepted(self) -> Self:
         accepted = self._var_bid_accepted
         bid_quantity_accepted = self._var_bid_quantity_accepted
         bid_quantity = self._var_bid_quantity
@@ -435,7 +448,7 @@ class ModelBuilder:
 
         return self
 
-    def constrain_bid_price(self) -> Self:
+    def _constrain_bid_price(self) -> Self:
         price = self.price_scenarios.data_array
 
         m = self._model
@@ -542,7 +555,12 @@ class ModelBuilder:
 
         return self
 
-    def constrain_imbalance(self) -> Self:
+    def constrain_bidding_strategy(self) -> Self:
+        self._constrain_bid_price()
+        self._constrain_bid_quantity_accepted()
+        return self
+
+    def _constrain_imbalance(self) -> Self:
         imbalance = self._var_imbalance
         m = self._model
         dispatch = self._var_dispatch
@@ -556,7 +574,7 @@ class ModelBuilder:
             - (dispatch - bid_quantity_accepted),
             sign="==",
             rhs=0,
-            name="imbalance (long)",
+            name="imbalance",
         )
         return self
 
@@ -585,7 +603,6 @@ class ModelBuilder:
 
     def expected_imbalance(self):
         time_scaling = self.price_scenarios.resolution / timedelta(hours=1)
-
         imbalance = self._var_imbalance
 
         probabilities_xr = xr.DataArray(
@@ -597,9 +614,16 @@ class ModelBuilder:
         return time_scaling * probabilities_xr * imbalance
 
     def add_objective(self, penalize_imbalance: float) -> Self:
+        if penalize_imbalance < abs(self.price_scenarios.data_array).max():
+            logging.warning(
+                "The imbalance penalty is lower the the highest (abs) price"
+            )
+
+        self._constrain_imbalance()
+        imbalance_cost = penalize_imbalance * self.expected_imbalance().sum()
+
         self._model.add_objective(
-            self.expected_trade_profits()
-            - penalize_imbalance * self.expected_imbalance().sum(),
+            self.expected_trade_profits() - imbalance_cost,
             sense="max",
         )
 
@@ -607,15 +631,36 @@ class ModelBuilder:
 
     def solve(self) -> Solution:
         self._model.solve(output_flag=False)
+
+        if self._var_imbalance.solution.max() > 0:
+            logging.warning(
+                "Probably some imbalances occurred somewhere, consider increasing the penaly"
+            )
+
         return Solution(self)
+
+
+class ExtractionError(Exception):
+    """Indicate a problem in retrieving data from the solved model"""
 
 
 @dataclass
 class Solution:
     _model_builder: ModelBuilder
 
-    def plausible_bidding_strategy(self, margin: float | None) -> xr.DataArray:
+    def plausible_bidding_prices(
+        self,
+        margin: None | float,
+        remove_quantity_bids_below: None | float,
+    ) -> xr.DataArray:
         model_builder = self._model_builder
+        bid_accepted = model_builder._var_bid_accepted
+
+        if "solution" not in bid_accepted.data.data_vars:
+            raise ExtractionError(
+                "A plausible bidding strategy requires the constraint 'constrain_bidding_strategy' "
+                "(_var_bid_accepted has no solution)"
+            )
 
         price_bid = xr.DataArray(
             dims=[
@@ -631,10 +676,10 @@ class Solution:
         )
 
         accepted_prices = model_builder.price_scenarios.data_array.where(
-            model_builder._var_bid_accepted.solution > 0.5
+            bid_accepted.solution > 0.5
         )
         rejected_prices = model_builder.price_scenarios.data_array.where(
-            model_builder._var_bid_accepted.solution < 0.5
+            bid_accepted.solution < 0.5
         )
 
         price_bid.sel(
@@ -679,6 +724,11 @@ class Solution:
                 {"bounds": "upper"}
             ).fillna(price_bid.sel({"bounds": "lower"}) + 2 * margin)
 
-            price_bid = price_bid.mean(dim=["bounds"])
+        price_bid = price_bid.mean(dim=["bounds"])
+
+        if remove_quantity_bids_below is not None:
+            price_bid = price_bid.where(
+                model_builder._var_bid_quantity.solution >= remove_quantity_bids_below
+            )
 
         return price_bid

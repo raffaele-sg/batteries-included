@@ -102,19 +102,14 @@ def test_model_builder():
         assert isinstance(var, linopy.Variable)
         assert var is model_builder._model.variables[var.name]
 
-    model_solved = model_builder.solve()
-    assert isinstance(model_solved, Solution)
-
 
 @pytest.fixture(scope="session")
 def solution() -> Solution:
     return (
         crate_model_builder()
-        .constrain_storage_level(soc_start=0.5, soc_end=0.5)
-        .constrain_imbalance()
-        .constrain_bid_quantity_accepted()
-        .constrain_bid_price()
-        .add_objective(penalize_imbalance=100_000.0)
+        .constrain_storage_level(soc_start=("==", 0.5), soc_end=("==", 0.5))
+        .constrain_bidding_strategy()
+        .add_objective(penalize_imbalance=1000.0)
         .solve()
     )
 
