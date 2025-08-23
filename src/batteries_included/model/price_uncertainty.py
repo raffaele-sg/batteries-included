@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from functools import cached_property
 from itertools import pairwise
-from typing import Any, Hashable, NamedTuple, Self
+from typing import Any, Hashable, Mapping, NamedTuple, Self
 
 import linopy
 import numpy as np
@@ -29,7 +29,7 @@ fraction = float
 
 @dataclass
 class PriceScenarios[T]:
-    scenarios: dict[Hashable, Scenario[TimeSeries[T]]]
+    scenarios: dict[int | str, Scenario[TimeSeries[T]]]
 
     @cached_property
     def start(self) -> None | datetime:
@@ -143,8 +143,6 @@ class ModelBuilder:
 
     _model: linopy.Model = field(default_factory=linopy.Model)
 
-    BIG_M: float = 1_000.0
-
     def reset_model(self) -> ModelBuilder:
         return ModelBuilder(
             battery=self.battery,
@@ -232,7 +230,7 @@ class ModelBuilder:
         """
         return self._model.add_variables(
             name="bid quantity",
-            lower=0.0,
+            lower=self.battery.parameters.power * 0.05,
             upper=self.battery.parameters.power,
             coords=[self._idx_time, self._idx_direction],
         )
@@ -252,19 +250,19 @@ class ModelBuilder:
             coords=[self._idx_time, self._idx_direction, self._idx_scenario],
         )
 
-    # @cached_property
-    # def _var_bid_price(self) -> linopy.Variable:
-    #     """
-    #     Bid price placed by time and direction
+    @cached_property
+    def _var_bid_price(self) -> linopy.Variable:
+        """
+        Bid price placed by time and direction
 
-    #     Dims:
-    #     - time
-    #     - direction
-    #     """
-    #     return self._model.add_variables(
-    #         name="bid price",
-    #         coords=[self._idx_time, self._idx_direction],
-    #     )
+        Dims:
+        - time
+        - direction
+        """
+        return self._model.add_variables(
+            name="bid price",
+            coords=[self._idx_time, self._idx_direction],
+        )
 
     @cached_property
     def _var_imbalance(self) -> linopy.Variable:
@@ -305,7 +303,40 @@ class ModelBuilder:
             coords=[self._idx_time, self._idx_scenario, self._idx_direction],
         )
 
-    def constrain_storage_level(self) -> Self:
+    def _constrain_storage_level_start(self, soc: fraction) -> Self:
+        assert 0.0 <= soc <= 1.0
+        m = self._model
+        level_initial = self._var_level_initial
+        size = self.battery.parameters.size()
+
+        m.add_constraints(
+            lhs=level_initial,
+            sign="==",
+            rhs=soc * size,
+            name="level (initial)",
+        )
+        return self
+
+    def _constrain_storage_level_end(self, soc: fraction) -> Self:
+        assert 0.0 <= soc <= 1.0
+        m = self._model
+        level = self._var_level
+        time = self._idx_time
+        size = self.battery.parameters.size()
+
+        m.add_constraints(
+            lhs=level.loc[time[-1], :],
+            sign="==",
+            rhs=soc * size,
+            name="level (last)",
+        )
+        return self
+
+    def constrain_storage_level(
+        self,
+        soc_start: None | float = None,
+        soc_end: None | float = None,
+    ) -> Self:
         model = self._model
         level = self._var_level
         time = self._idx_time
@@ -346,35 +377,15 @@ class ModelBuilder:
             coords=[time, scenario],
             name="level",
         )
-        return self
 
-    def constrain_storage_level_start(self, soc: fraction) -> Self:
-        assert 0.0 <= soc <= 1.0
-        m = self._model
-        level_initial = self._var_level_initial
-        size = self.battery.parameters.size()
+        if soc_start is not None:
+            assert 0 <= soc_start <= 1
+            self._constrain_storage_level_start(soc_start)
 
-        m.add_constraints(
-            lhs=level_initial,
-            sign="==",
-            rhs=soc * size,
-            name="level (initial)",
-        )
-        return self
+        if soc_end is not None:
+            assert 0 <= soc_end <= 1
+            self._constrain_storage_level_end(soc_end)
 
-    def constrain_storage_level_end(self, soc: fraction) -> Self:
-        assert 0.0 <= soc <= 1.0
-        m = self._model
-        level = self._var_level
-        time = self._idx_time
-        size = self.battery.parameters.size()
-
-        m.add_constraints(
-            lhs=level.loc[time[-1], :],
-            sign="==",
-            rhs=soc * size,
-            name="level (last)",
-        )
         return self
 
     def accept_all(self) -> Self:
@@ -393,7 +404,7 @@ class ModelBuilder:
         accepted = self._var_bid_accepted
         bid_quantity_accepted = self._var_bid_quantity_accepted
         bid_quantity = self._var_bid_quantity
-        # M = self.BIG_M
+
         M = self.battery.parameters.power
         m = self._model
 
@@ -425,15 +436,17 @@ class ModelBuilder:
         return self
 
     def constrain_bid_price(self) -> Self:
+        price = self.price_scenarios.data_array
+
         m = self._model
         accepted = self._var_bid_accepted
+
         # bid_quantity_accepted = self._var_bid_quantity_accepted
         # bid_quantity = self._var_bid_quantity
         # bid_price = self._var_bid_price
-        # M = 1
-        # TOLLERENCE = 0.01
+        # M = price.max()
 
-        # price = self.price_scenarios.data_array
+        # # TOLLERENCE = 0.00
 
         # bid_price_sell = slice_variable(
         #     bid_price,
@@ -483,27 +496,28 @@ class ModelBuilder:
         #     rhs=0,
         #     name="pb sell (a=1 -> gte p)",
         # )
+
+        direction_name = self._idx_direction.name
+
         scenario_coord_name = self._idx_scenario.name
+        scenario_coord_position = price.get_axis_num(scenario_coord_name)
 
-        price_scenarios = self.price_scenarios.data_array
-        scenario_coord_position = price_scenarios.get_axis_num(scenario_coord_name)
-
-        sorting_index = price_scenarios.argsort(scenario_coord_position).assign_coords(
-            {scenario_coord_name: range(len(price_scenarios[scenario_coord_name]))}
+        sorting_index = price.argsort(scenario_coord_position).assign_coords(
+            {scenario_coord_name: range(len(price[scenario_coord_name]))}
         )
 
-        for a, b in pairwise(sorting_index.coords["scenario"].values):
-            idx_lower = sorting_index.sel({"scenario": a})
-            idx_upper = sorting_index.sel({"scenario": b})
+        for a, b in pairwise(sorting_index.coords[scenario_coord_name].values):
+            idx_lower = sorting_index.sel({scenario_coord_name: a})
+            idx_upper = sorting_index.sel({scenario_coord_name: b})
 
             # If a buy bid is accepted with a higher price, it must also be accepted with a lower price
             m.add_constraints(
                 lhs=(
-                    accepted.sel({"direction": BidDirection.buy.value}).isel(
-                        {"scenario": idx_lower}
+                    accepted.sel({direction_name: BidDirection.buy.value}).isel(
+                        {scenario_coord_name: idx_lower}
                     )
-                    - accepted.sel({"direction": BidDirection.buy.value}).isel(
-                        {"scenario": idx_upper}
+                    - accepted.sel({direction_name: BidDirection.buy.value}).isel(
+                        {scenario_coord_name: idx_upper}
                     )
                 ),
                 sign=">=",
@@ -514,11 +528,11 @@ class ModelBuilder:
             # If a sell bid is accepted with a lower price, it must also be accepted with a higher price
             m.add_constraints(
                 lhs=(
-                    accepted.sel({"direction": BidDirection.sell.value}).isel(
-                        {"scenario": idx_lower}
+                    accepted.sel({direction_name: BidDirection.sell.value}).isel(
+                        {scenario_coord_name: idx_lower}
                     )
-                    - accepted.sel({"direction": BidDirection.sell.value}).isel(
-                        {"scenario": idx_upper}
+                    - accepted.sel({direction_name: BidDirection.sell.value}).isel(
+                        {scenario_coord_name: idx_upper}
                     )
                 ),
                 sign="<=",
@@ -528,8 +542,27 @@ class ModelBuilder:
 
         return self
 
-    def trade_profits(self) -> linopy.LinearExpression:
+    def constrain_imbalance(self) -> Self:
+        imbalance = self._var_imbalance
+        m = self._model
+        dispatch = self._var_dispatch
+        bid_quantity_accepted = self._var_bid_quantity_accepted
+
+        m.add_constraints(
+            lhs=(
+                imbalance.sel({self._idx_position.name: Position.long.value})
+                - imbalance.sel({self._idx_position.name: Position.short.value})
+            )
+            - (dispatch - bid_quantity_accepted),
+            sign="==",
+            rhs=0,
+            name="imbalance (long)",
+        )
+        return self
+
+    def expected_trade_profits(self) -> linopy.LinearExpression:
         time_scaling = self.price_scenarios.resolution / timedelta(hours=1)
+
         probabilities = self.price_scenarios.probabilities
         prices = self.price_scenarios.values
 
@@ -550,38 +583,9 @@ class ModelBuilder:
             sell.dot(probabilities * prices).sub(buy.dot(probabilities * prices))
         )
 
-    # def bid_price_penalty(self, penalty: float) -> linopy.LinearExpression:
-    #     time_scaling = self.price_scenarios.resolution / timedelta(hours=1)
-    #     return time_scaling * penalty * self._var_bid_price
-
-    # def bid_quantity_penalty(self, penalty: float) -> linopy.LinearExpression:
-    #     time_scaling = self.price_scenarios.resolution / timedelta(hours=1)
-    #     return time_scaling * penalty * self._var_bid_quantity
-
-    # def bid_accepted_penalty(self, penalty: float) -> linopy.LinearExpression:
-    #     time_scaling = self.price_scenarios.resolution / timedelta(hours=1)
-    #     return time_scaling * penalty * self._var_bid_accepted
-
-    def constrain_imbalance(self) -> Self:
-        imbalance = self._var_imbalance
-        m = self._model
-        dispatch = self._var_dispatch
-        bid_quantity_accepted = self._var_bid_quantity_accepted
-
-        m.add_constraints(
-            lhs=(
-                imbalance.sel({self._idx_position.name: Position.long.value})
-                - imbalance.sel({self._idx_position.name: Position.short.value})
-            )
-            - (dispatch - bid_quantity_accepted),
-            sign="==",
-            rhs=0,
-            name="imbalance (long)",
-        )
-        return self
-
-    def imbalance_penalty(self, penalty: float):
+    def expected_imbalance(self):
         time_scaling = self.price_scenarios.resolution / timedelta(hours=1)
+
         imbalance = self._var_imbalance
 
         probabilities_xr = xr.DataArray(
@@ -589,14 +593,13 @@ class ModelBuilder:
             coords={self._idx_scenario.name: self._idx_scenario},
             dims=[self._idx_scenario.name],
         )
-        return time_scaling * (penalty) * (probabilities_xr * imbalance)
 
-    def add_objective(self, penalty: float = 1000) -> Self:
+        return time_scaling * probabilities_xr * imbalance
+
+    def add_objective(self, penalize_imbalance: float) -> Self:
         self._model.add_objective(
-            self.trade_profits() - self.imbalance_penalty(penalty=penalty),
-            # - self.bid_accepted_penalty(10)
-            # - self.bid_quantity_penalty(10)
-            # - self.bid_price_penalty(10)
+            self.expected_trade_profits()
+            - penalize_imbalance * self.expected_imbalance().sum(),
             sense="max",
         )
 
@@ -610,3 +613,72 @@ class ModelBuilder:
 @dataclass
 class Solution:
     _model_builder: ModelBuilder
+
+    def plausible_bidding_strategy(self, margin: float | None) -> xr.DataArray:
+        model_builder = self._model_builder
+
+        price_bid = xr.DataArray(
+            dims=[
+                model_builder._idx_time.name,
+                model_builder._idx_direction.name,
+                "bounds",
+            ],
+            coords=[
+                model_builder._idx_time.values,
+                model_builder._idx_direction.values,
+                ["lower", "upper"],
+            ],
+        )
+
+        accepted_prices = model_builder.price_scenarios.data_array.where(
+            model_builder._var_bid_accepted.solution > 0.5
+        )
+        rejected_prices = model_builder.price_scenarios.data_array.where(
+            model_builder._var_bid_accepted.solution < 0.5
+        )
+
+        price_bid.sel(
+            {
+                model_builder._idx_direction.name: BidDirection.sell.value,
+                "bounds": "lower",
+            }
+        ).loc[:] = rejected_prices.max(dim=[model_builder._idx_scenario.name]).sel(
+            {model_builder._idx_direction.name: BidDirection.sell.value}
+        )
+        price_bid.sel(
+            {
+                model_builder._idx_direction.name: BidDirection.sell.value,
+                "bounds": "upper",
+            }
+        ).loc[:] = accepted_prices.min(dim=[model_builder._idx_scenario.name]).sel(
+            {model_builder._idx_direction.name: BidDirection.sell.value}
+        )
+
+        price_bid.sel(
+            {
+                model_builder._idx_direction.name: BidDirection.buy.value,
+                "bounds": "upper",
+            }
+        ).loc[:] = rejected_prices.min(dim=[model_builder._idx_scenario.name]).sel(
+            {model_builder._idx_direction.name: BidDirection.buy.value}
+        )
+        price_bid.sel(
+            {
+                model_builder._idx_direction.name: BidDirection.buy.value,
+                "bounds": "lower",
+            }
+        ).loc[:] = accepted_prices.max(dim=[model_builder._idx_scenario.name]).sel(
+            {model_builder._idx_direction.name: BidDirection.buy.value}
+        )
+
+        if margin is not None:
+            price_bid.sel({"bounds": "lower"}).loc[:] = price_bid.sel(
+                {"bounds": "lower"}
+            ).fillna(price_bid.sel({"bounds": "upper"}) - 2 * margin)
+            price_bid.sel({"bounds": "upper"}).loc[:] = price_bid.sel(
+                {"bounds": "upper"}
+            ).fillna(price_bid.sel({"bounds": "lower"}) + 2 * margin)
+
+            price_bid = price_bid.mean(dim=["bounds"])
+
+        return price_bid

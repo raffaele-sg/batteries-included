@@ -9,7 +9,7 @@ import linopy
 import numpy as np
 import pandas as pd
 
-from batteries_included.model.common import Battery, EURperkWh, TimeSeries, kWh
+from batteries_included.model.common import Battery, EURperMWh, MWh, TimeSeries
 
 
 class Variables(Enum):
@@ -25,13 +25,13 @@ class Metadata(NamedTuple):
 
 def build_dispatch(
     battery: Battery,
-    price: TimeSeries[EURperkWh],
+    price: TimeSeries[EURperMWh],
     bidirectional_dispatch: bool = False,
 ) -> tuple[Metadata, linopy.Model]:
     m = linopy.Model()
     time = pd.Index(np.arange(len(price.values)), name="time")
 
-    size: kWh = battery.parameters.power * (
+    size: MWh = battery.parameters.power * (
         battery.parameters.duration / timedelta(hours=1)
     )
 
@@ -111,7 +111,7 @@ class SimulationManager:
 
     @staticmethod
     def from_inputs(
-        battery: Battery, price: TimeSeries[EURperkWh]
+        battery: Battery, price: TimeSeries[EURperMWh]
     ) -> SimulationManager:
         metadata, model = build_dispatch(battery=battery, price=price)
         return SimulationManager(model=model, metadata=metadata)

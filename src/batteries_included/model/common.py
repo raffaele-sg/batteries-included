@@ -4,9 +4,9 @@ from datetime import datetime, timedelta
 from math import pi, sin
 from typing import NamedTuple, Sequence, Type
 
-kW = float
-kWh = float
-EURperkWh = float
+MW = float
+MWh = float
+EURperMWh = float
 
 
 class State(NamedTuple):
@@ -19,10 +19,10 @@ class State(NamedTuple):
 
 class Parameters(NamedTuple):
     duration: timedelta  # The time it takes to fully discharge the battery
-    power: kW  # represents both, charging and discharing, in kW
+    power: MW  # represents both, charging and discharing, in kW
     efficiency: float  # Share of energy losses
 
-    def size(self) -> kWh:
+    def size(self) -> MWh:
         return self.power * (self.duration / timedelta(hours=1))
 
     @classmethod

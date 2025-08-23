@@ -110,13 +110,11 @@ def test_model_builder():
 def solution() -> Solution:
     return (
         crate_model_builder()
-        .constrain_storage_level()
-        .constrain_storage_level_start(0.5)
-        .constrain_storage_level_end(0.5)
+        .constrain_storage_level(soc_start=0.5, soc_end=0.5)
         .constrain_imbalance()
         .constrain_bid_quantity_accepted()
         .constrain_bid_price()
-        .add_objective(penalty=100_000.0)
+        .add_objective(penalize_imbalance=100_000.0)
         .solve()
     )
 
