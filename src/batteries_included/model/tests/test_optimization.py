@@ -6,27 +6,22 @@ import pytest
 
 from batteries_included.model.common import (
     Battery,
-    Parameters,
-    State,
-    TimeSeries,
-)
-from batteries_included.model.price_uncertainty import (
-    ModelBuilder,
-    Position,
     PriceScenarios,
     Scenario,
+    TimeSeries,
+)
+from batteries_included.model.optimization import (
+    ModelBuilder,
+    Position,
     Solution,
 )
 
 
 def create_battery():
     return Battery(
-        state=State(soc=0.5),
-        parameters=Parameters(
-            duration=timedelta(hours=2),
-            power=2.0,
-            efficiency=0.9,
-        ),
+        duration=timedelta(hours=2),
+        power=2.0,
+        efficiency=0.9,
     )
 
 
@@ -109,6 +104,7 @@ def solution() -> Solution:
         crate_model_builder()
         .constrain_storage_level(soc_start=("==", 0.5), soc_end=("==", 0.5))
         .constrain_bidding_strategy()
+        .constrain_imbalance()
         .add_objective(penalize_imbalance=1000.0)
         .solve()
     )

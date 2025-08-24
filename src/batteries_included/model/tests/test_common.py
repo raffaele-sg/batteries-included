@@ -1,7 +1,6 @@
-from batteries_included.model.common import Battery, Parameters, State
+from batteries_included.model.common import Battery
 
 
 def test_example():
-    for i in Battery, Parameters, State:
-        example = i.example()
-        assert isinstance(example, i)
+    example = Battery.example()
+    assert isinstance(example, Battery)

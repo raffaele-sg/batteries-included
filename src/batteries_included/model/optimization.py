@@ -2,110 +2,19 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timedelta
 from enum import Enum
 from functools import cached_property
 from itertools import pairwise
-from typing import Any, Hashable, Literal, Mapping, NamedTuple, Self, TypeVar, Union
+from typing import Any, Literal, Self
 
 import linopy
-import numpy as np
 import pandas as pd
 import xarray as xr
 
-from batteries_included.model.common import Battery, TimeSeries
-
-
-class Scenario[T](NamedTuple):
-    probability: float
-    value: T
-
-
-class InconsistentPriceScenarios(Exception):
-    "Excation raised becuase price sceanrios are inconsistent"
-
+from batteries_included.model.common import Battery, PriceScenarios
 
 fraction = float
-
-V = TypeVar("V", int, float)
-
-
-@dataclass
-class PriceScenarios[T]:
-    scenarios: (
-        Mapping[Hashable, Scenario[TimeSeries[T]]] | dict[str, Scenario[TimeSeries[T]]]
-    )
-
-    @cached_property
-    def start(self) -> None | datetime:
-        (s,) = {s.value.start for s in self.scenarios.values()}
-        return s
-
-    @cached_property
-    def resolution(self) -> timedelta:
-        (s,) = {s.value.resolution for s in self.scenarios.values()}
-        return s
-
-    @cached_property
-    def data_array(self) -> xr.DataArray:
-        name = "time"
-        dim_time, _ = self.values.shape
-
-        time = (
-            pd.date_range(
-                start=self.start,
-                freq=self.resolution,
-                periods=dim_time,
-                name=name,
-            )
-            if isinstance(self.start, datetime)
-            else pd.Index(np.arange(dim_time), name=name)
-        )
-
-        return xr.DataArray(
-            [s.value.values for s in self.scenarios.values()],
-            dims=["scenario", "time"],
-            coords=[
-                list(self.scenarios.keys()),
-                time,
-            ],
-        )
-
-    def __post_init__(self):
-        absolute_tolerance = 1e-08
-        if (
-            not abs(sum(s.probability for s in self.scenarios.values()) - 1)
-            <= absolute_tolerance
-        ):
-            raise InconsistentPriceScenarios("Probability does not sum up to 1.0")
-
-        if not len({s.value.start for s in self.scenarios.values()}) == 1:
-            raise InconsistentPriceScenarios(
-                "TimeSeries have different start attributes"
-            )
-
-        if not len({s.value.resolution for s in self.scenarios.values()}) == 1:
-            raise InconsistentPriceScenarios(
-                "TimeSeries have different resolution attributes"
-            )
-
-        if not len({len(s.value.values) for s in self.scenarios.values()}) == 1:
-            raise InconsistentPriceScenarios("TimeSeries have different lengths")
-
-    @cached_property
-    def probabilities(self):
-        return np.array(
-            tuple(s.probability for s in self.scenarios.values()), dtype=float
-        )
-
-    @cached_property
-    def values(self):
-        return np.array(
-            tuple(s.value.values for s in self.scenarios.values()), dtype=float
-        ).T
-
-    def to_array(self) -> xr.DataArray:
-        return xr.DataArray([i for i in self.scenarios])
 
 
 class BidAttribute(Enum):
@@ -192,7 +101,7 @@ class ModelBuilder:
         return self._model.add_variables(
             name="dispatch",
             lower=0.0,
-            upper=self.battery.parameters.power,
+            upper=self.battery.power,
             coords=[self._idx_time, self._idx_direction, self._idx_scenario],
         )
 
@@ -208,7 +117,7 @@ class ModelBuilder:
         return self._model.add_variables(
             name="level",
             lower=0.0,
-            upper=self.battery.parameters.size(),
+            upper=self.battery.size,
             coords=[self._idx_time, self._idx_scenario],
         )
 
@@ -220,7 +129,7 @@ class ModelBuilder:
         return self._model.add_variables(
             name="level (initial)",
             lower=0.0,
-            upper=self.battery.parameters.size(),
+            upper=self.battery.size,
             coords=None,
         )
 
@@ -236,7 +145,7 @@ class ModelBuilder:
         return self._model.add_variables(
             name="bid quantity",
             lower=0.0,
-            upper=self.battery.parameters.power,
+            upper=self.battery.power,
             coords=[self._idx_time, self._idx_direction],
         )
 
@@ -317,7 +226,7 @@ class ModelBuilder:
 
         m = self._model
         level_initial = self._var_level_initial
-        size = self.battery.parameters.size()
+        size = self.battery.size
 
         m.add_constraints(
             lhs=level_initial,
@@ -337,7 +246,7 @@ class ModelBuilder:
         m = self._model
         level = self._var_level
         time = self._idx_time
-        size = self.battery.parameters.size()
+        size = self.battery.size
 
         m.add_constraints(
             lhs=level.loc[time[-1], :],
@@ -363,13 +272,13 @@ class ModelBuilder:
             self._var_dispatch,
             dim_name=direction.name,
             dim_value=BidDirection.buy.value,
-        ).mul(self.battery.parameters.efficiency**0.5)
+        ).mul(self.battery.efficiency_charge)
 
         discharge = slice_variable(
             self._var_dispatch,
             dim_name=direction.name,
             dim_value=BidDirection.sell.value,
-        ).div(self.battery.parameters.efficiency**0.5)
+        ).div(self.battery.efficiency_discharge)
 
         hours = self.price_scenarios.resolution / timedelta(hours=1)
         # level_initial = self.battery.state.soc * self.battery.parameters.size()
@@ -418,7 +327,7 @@ class ModelBuilder:
         bid_quantity_accepted = self._var_bid_quantity_accepted
         bid_quantity = self._var_bid_quantity
 
-        M = self.battery.parameters.power
+        M = self.battery.power
         m = self._model
 
         m.add_constraints(
@@ -560,7 +469,7 @@ class ModelBuilder:
         self._constrain_bid_quantity_accepted()
         return self
 
-    def _constrain_imbalance(self) -> Self:
+    def constrain_imbalance(self) -> Self:
         imbalance = self._var_imbalance
         m = self._model
         dispatch = self._var_dispatch
@@ -619,7 +528,6 @@ class ModelBuilder:
                 "The imbalance penalty is lower the the highest (abs) price"
             )
 
-        self._constrain_imbalance()
         imbalance_cost = penalize_imbalance * self.expected_imbalance().sum()
 
         self._model.add_objective(
