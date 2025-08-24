@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import cached_property
 from math import pi, sin
-from typing import Any, Hashable, Mapping, NamedTuple, Protocol, Sequence, Type
+from typing import Hashable, Mapping, NamedTuple, Sequence, Type
 
 import numpy as np
 import pandas as pd
@@ -13,27 +13,6 @@ import xarray as xr
 MW = float
 MWh = float
 EURperMWh = float
-
-
-# class StateOfCharge(NamedTuple):
-#     soc: float  # State of charge, [0.0, 1.0]
-
-#     @classmethod
-#     def example(cls: Type[StateOfCharge]):
-#         return cls(soc=0.5)
-
-
-# class Battery(NamedTuple):
-#     duration: timedelta  # The time it takes to fully discharge the battery
-#     power: MW  # represents both, charging and discharing, in kW
-#     efficiency: float  # Share of energy losses
-
-#     def size(self) -> MWh:
-#         return self.power * (self.duration / timedelta(hours=1))
-
-#     @classmethod
-#     def example(cls: Type[Battery]):
-#         return cls(duration=timedelta(hours=2), efficiency=0.5**2, power=2.0)
 
 
 class Battery(NamedTuple):
