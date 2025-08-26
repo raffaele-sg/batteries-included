@@ -322,6 +322,11 @@ class ModelBuilder:
 
         return self
 
+    def contain_dispatch_across_scenarios(self) -> Self:
+        self._accept_all()
+        self.constrain_bidding_strategy()
+        return self
+
     def _constrain_bid_quantity_accepted(self) -> Self:
         accepted = self._var_bid_accepted
         bid_quantity_accepted = self._var_bid_quantity_accepted
@@ -640,3 +645,6 @@ class Solution:
             )
 
         return price_bid
+
+    def objective(self):
+        return self._model_builder._model.objective.value

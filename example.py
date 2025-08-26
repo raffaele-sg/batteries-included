@@ -1,44 +1,106 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from batteries_included.model.common import (
     Battery,
-    Parameters,
-    State,
+    PriceScenarios,
+    Scenario,
     TimeSeries,
 )
-from batteries_included.model.perfect_foresight import SimulationManager, Variables
+from batteries_included.model.optimization import ModelBuilder
 
-# from batteries_included.visualization import show_in_terminal
-# price = TimeSeries.example()
-# battery = Battery.example()
-# show_in_terminal(battery=battery, price=price)
+start = datetime(1981, 9, 21)
+resolution = timedelta(hours=1)
 
-# Define a price series
-price = TimeSeries(
-    start=None,
-    resolution=timedelta(minutes=15),
-    values=[0.12, 0.11, 0.10, 0.10, 0.10, 0.11, 0.13, 0.16],  # EUR per kWh
+# fmt: off
+price_scenarios = PriceScenarios(
+    scenarios={
+        "Scenario 1": Scenario(
+            probability=1/3,
+            value=TimeSeries(
+                start=start,
+                resolution=resolution,
+                values=[
+                     97.70,  93.18,  87.64,  85.78,  89.66,  98.80, 108.84, 110.12, 
+                    103.91,  90.05,  80.98,  69.06,  49.07,  35.00,  42.03,  73.02,
+                     81.45, 101.69, 109.16, 135.15, 126.11, 114.95, 103.49,  97.34,
+                ],
+            ),
+        ),
+        "Scenario 2": Scenario(
+            probability=1/3,
+            value=TimeSeries(
+                start=start,
+                resolution=resolution,
+                values=[
+                     83.97,  72.65,  64.62,  68.07,  62.18,  61.60,  55.79,  46.43, 
+                     37.61,  47.06,  34.63,  37.15,  58.63,  51.89,  89.00, 112.05,
+                     79.16, 100.55, 120.27, 165.49, 171.94, 144.63, 108.39, 108.09,
+                ],
+            ),
+        ),
+        # variation (4)
+        "Scenario 3": Scenario(
+            probability=1/3,
+            value=TimeSeries(
+                start=start,
+                resolution=resolution,
+                values=[
+                    112.53,  95.98,  82.20,  73.79,  74.10,  83.36, 108.46, 114.15,
+                    106.91,  77.74,  80.62,  45.24,  41.33,  24.16,   6.48,  44.97,
+                     60.05,  67.50,  87.97, 146.32, 163.20, 166.38, 172.63, 151.31,
+                ],
+            ),
+        ),
+    }
 )
+# fmt: on
 
-
-# Define a battery consisting of a state and a set of technical paramenters
 battery = Battery(
-    state=State(soc=0.5),
-    parameters=Parameters(
-        duration=timedelta(hours=2.0),
-        power=2.0,  # kW
-        efficiency=0.9,
-    ),
+    duration=timedelta(hours=2.0),
+    power=2.0,  # MW
+    efficiency=0.9,
+)
+
+# Model one dispatch strategy for all scenarios
+solution_dispatch_unique = (
+    ModelBuilder(
+        battery=battery,
+        price_scenarios=price_scenarios,
+    )
+    .constrain_storage_level(soc_start=("==", 0.5), soc_end=(">=", 0.5))
+    .contain_dispatch_across_scenarios()
+    .constrain_imbalance()
+    .add_objective(penalize_imbalance=1000.0)
+    .solve()
+)
+print("- Objective (dispatch_unique)", solution_dispatch_unique.objective())
+
+# Model multiple independent dispatch strategies (unconstrained)
+solution_dispatch_unconstrained = (
+    ModelBuilder(
+        battery=battery,
+        price_scenarios=price_scenarios,
+    )
+    .constrain_storage_level(soc_start=("==", 0.5), soc_end=(">=", 0.5))
+    .constrain_imbalance()
+    .add_objective(penalize_imbalance=1000.0)
+    .solve()
+)
+print(
+    "- Objective (dispatch_unconstrained)", solution_dispatch_unconstrained.objective()
 )
 
 
-# Access the result of a model that is built solved under the hood
-extractor = SimulationManager.from_inputs(battery=battery, price=price)
-
-level = extractor.to_timeseries(variable=Variables.level)
-buy = extractor.to_timeseries(variable=Variables.buy)
-sell = extractor.to_timeseries(variable=Variables.sell)
-
-print("\n Storage level [kWh]: \n ->", level)
-print("\n Power used for charging [kW]: \n ->", buy)
-print("\n Power delivered by discharing [kW]: \n ->", sell)
+# Model multiple dependent dispatch strategies (backed by a price bidding strategy)
+solution_optimal_bidding = (
+    ModelBuilder(
+        battery=battery,
+        price_scenarios=price_scenarios,
+    )
+    .constrain_storage_level(soc_start=("==", 0.5), soc_end=(">=", 0.5))
+    .constrain_bidding_strategy()
+    .constrain_imbalance()
+    .add_objective(penalize_imbalance=1000.0)
+    .solve()
+)
+print("- Objective (optimal_bidding)", solution_optimal_bidding.objective())
