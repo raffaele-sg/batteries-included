@@ -11,7 +11,9 @@ The Day-Ahead electricity market in Europe is organized as a pay-as-clear auctio
 
 Whether a bid is accepted depends on its bid price compared to the auction clearing price, which is uncertain in advance. How do we find a suitable bidding strategy when the clearing price is uncertain?  
 
-If we represent the uncertainty of market prices with a set of representative scenarios (each with an associated probability), then the optimization problem becomes: _**Choose one bidding strategy** (a set of price-quantity offers), such that it **maximizes expected profit** across all scenarios, while ensuring that the implied dispatch is **physically feasible** in each individual scenario._
+If we represent the uncertainty of market prices with a set of representative scenarios (each with an associated probability), then the optimization problem becomes:
+
+_**Choose one bidding strategy** (a set of price-quantity offers), such that it **maximizes expected profit** across all scenarios, while ensuring that the implied dispatch is physically feasible in **each individual scenario**._
 
 ## Example
 
@@ -19,95 +21,239 @@ Take the exmple below showing three price scenarios (and the optimized bidding s
 
 
 # Quickstart
+
 ## Installation
 ```bash
 pip install git+https://github.com/raffaele-sg/batteries-included.git@v0.1.0-alpha
 ```
+## Price scenario definition
+```python
+from datetime import datetime, timedelta
+from batteries_included.model.common import PriceScenarios, Scenario, TimeSeries
 
-## Use
+
+start = datetime(1981, 9, 21)
+resolution = timedelta(hours=1)
+
+# fmt: off
+price_scenarios = PriceScenarios(
+    scenarios={
+        "Scenario 1": Scenario(
+            probability=1/3,
+            value=TimeSeries(
+                start=start,
+                resolution=resolution,
+                values=[
+                     97.70,  93.18,  87.64,  85.78,  89.66,  98.80, 108.84, 110.12, 
+                    103.91,  90.05,  80.98,  69.06,  49.07,  35.00,  42.03,  73.02,
+                     81.45, 101.69, 109.16, 135.15, 126.11, 114.95, 103.49,  97.34,
+                ],
+            ),
+        ),
+        "Scenario 2": Scenario(
+            probability=1/3,
+            value=TimeSeries(
+                start=start,
+                resolution=resolution,
+                values=[
+                     83.97,  72.65,  64.62,  68.07,  62.18,  61.60,  55.79,  46.43, 
+                     37.61,  47.06,  34.63,  37.15,  58.63,  51.89,  89.00, 112.05,
+                     79.16, 100.55, 120.27, 165.49, 171.94, 144.63, 108.39, 108.09,
+                ],
+            ),
+        ),
+        "Scenario 3": Scenario(
+            probability=1/3,
+            value=TimeSeries(
+                start=start,
+                resolution=resolution,
+                values=[
+                    112.53,  95.98,  82.20,  73.79,  74.10,  83.36, 108.46, 114.15,
+                    106.91,  77.74,  80.62,  45.24,  41.33,  24.16,   6.48,  44.97,
+                     60.05,  67.50,  87.97, 146.32, 163.20, 166.38, 172.63, 151.31,
+                ],
+            ),
+        ),
+    }
+)
+# fmt: on
+```
+
+## Battery definition
+```python
+from batteries_included.model.common import Battery
+
+
+battery = Battery(
+    duration=timedelta(hours=2.0),
+    power=2.0,      # MW
+    efficiency=0.9, # Round-trip
+)
+```
+
+## Model definition and solution
+```python
+from batteries_included.model.optimization import ModelBuilder
+
+
+solution = (
+    ModelBuilder(
+        battery=battery,
+        price_scenarios=price_scenarios,
+    )
+    .constrain_storage_level(soc_start=("==", 0.5), soc_end=(">=", 0.5))
+    .constrain_bidding_strategy()
+    .constrain_imbalance()
+    .add_objective(penalize_imbalance=1000.0)
+    .solve()
+)
+```
 
 ```python
-from datetime import timedelta
+import pandas as pd
 
-from batteries_included.model import (
-    Battery,
-    Parameters,
-    State,
-    TimeSeries,
+
+df = pd.DataFrame(
+    solution.collect_bids(
+        margin=10.0,
+        remove_quantity_bids_below=0.0001,
+    )
 )
-from batteries_included.optimization import Extractor, Variables
-
-
-# Define a price series
-price = TimeSeries(
-    start=None,
-    resolution=timedelta(minutes=15),
-    values=[0.12, 0.11, 0.10, 0.10, 0.10, 0.11, 0.13, 0.16],  # EUR per kWh
-)
-
-
-# Define a battery consisting of a state and a set of technical paramenters
-battery = Battery(
-    state=State(soc=0.5),
-    parameters=Parameters(
-        duration=timedelta(hours=2.0),
-        power=2.0,  # kW
-        efficiency=0.9,
-    ),
-)
-
-
-# Access the result of a model that is built and solved under the hood
-extractor = Extractor.from_inputs(battery=battery, price=price)
-
-level = extractor.to_timeseries(variable=Variables.level)
-buy = extractor.to_timeseries(variable=Variables.buy)
-sell = extractor.to_timeseries(variable=Variables.sell)
-
-print("\n Storage level [kWh]: \n ->", level)
-print("\n Power used for charging [kW]: \n ->", buy)
-print("\n Power delivered by discharing [kW]: \n ->", sell)
 ```
 
-This should print:
-```console
-Storage level [kWh]: 
--> TimeSeries(start=None, resolution=datetime.timedelta(seconds=900), values=[1.6310676063100003, 1.6310676063100003, 2.105409255336, 2.579750904362, 3.054092553388, 3.054092553388, 2.527046276694, 2.0])
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>time</th>
+      <th>direction</th>
+      <th>quantity</th>
+      <th>price</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>1981-09-21 00:00:00</td>
+      <td>BidDirection.sell</td>
+      <td>1.897367</td>
+      <td>73.970</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>1981-09-21 02:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>0.216370</td>
+      <td>97.640</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>1981-09-21 03:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>2.000000</td>
+      <td>95.780</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>1981-09-21 04:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>2.000000</td>
+      <td>99.660</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>1981-09-21 06:00:00</td>
+      <td>BidDirection.sell</td>
+      <td>2.000000</td>
+      <td>45.790</td>
+    </tr>
+    <tr>
+      <th>5</th>
+      <td>1981-09-21 07:00:00</td>
+      <td>BidDirection.sell</td>
+      <td>1.794733</td>
+      <td>36.430</td>
+    </tr>
+    <tr>
+      <th>6</th>
+      <td>1981-09-21 08:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>0.216370</td>
+      <td>70.760</td>
+    </tr>
+    <tr>
+      <th>7</th>
+      <td>1981-09-21 10:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>2.000000</td>
+      <td>57.625</td>
+    </tr>
+    <tr>
+      <th>8</th>
+      <td>1981-09-21 11:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>2.000000</td>
+      <td>41.195</td>
+    </tr>
+    <tr>
+      <th>9</th>
+      <td>1981-09-21 12:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>0.216370</td>
+      <td>53.850</td>
+    </tr>
+    <tr>
+      <th>10</th>
+      <td>1981-09-21 12:00:00</td>
+      <td>BidDirection.sell</td>
+      <td>1.800000</td>
+      <td>53.850</td>
+    </tr>
+    <tr>
+      <th>11</th>
+      <td>1981-09-21 13:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>2.000000</td>
+      <td>61.890</td>
+    </tr>
+    <tr>
+      <th>12</th>
+      <td>1981-09-21 14:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>2.000000</td>
+      <td>65.515</td>
+    </tr>
+    <tr>
+      <th>13</th>
+      <td>1981-09-21 19:00:00</td>
+      <td>BidDirection.sell</td>
+      <td>1.794733</td>
+      <td>125.150</td>
+    </tr>
+    <tr>
+      <th>14</th>
+      <td>1981-09-21 20:00:00</td>
+      <td>BidDirection.sell</td>
+      <td>2.000000</td>
+      <td>116.110</td>
+    </tr>
+    <tr>
+      <th>15</th>
+      <td>1981-09-21 22:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>0.108185</td>
+      <td>182.630</td>
+    </tr>
+    <tr>
+      <th>16</th>
+      <td>1981-09-21 23:00:00</td>
+      <td>BidDirection.buy</td>
+      <td>2.000000</td>
+      <td>161.310</td>
+    </tr>
+  </tbody>
+</table>
 
-Power used for charging [kW]: 
--> TimeSeries(start=None, resolution=datetime.timedelta(seconds=900), values=[0.0, 0.0, 2.0, 2.0, 2.0, 0.0, 0.0, 0.0])
-
-Power delivered by discharing [kW]: 
--> TimeSeries(start=None, resolution=datetime.timedelta(seconds=900), values=[1.4000000000159372, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 2.0])
-```
-
-Note that: 
-- The initial level is 2.00 kWh because of the following inputs:
-    - Initial 0.5 SoC
-    - 2 h duration
-    - 2.0 kW power
-- The power that is delivered in the first interval is 1.40 kW:
-    - This corresponts to 0.35 kWh because the time resolution is 15 minutes
-    - The storage level drops by 0.37 kWh becuase of the input round-trip efficiency (0.35 kWh / 0.9^0.5) 
-- The storage level after the first interval is in fact 1.63 kWh, i.e. 2.00 - 0.37 kWh
-
-
-# Development
-## Try as module user
-Install as editable:
-```bash
-uv pip install -e . ".[dev]"
-```
-
-Run the example.py file:
-```bash
-uv run example.py
-```
-
-Runs test:
-```bash
-uv run pytest
-```
 
 # Formulation
 

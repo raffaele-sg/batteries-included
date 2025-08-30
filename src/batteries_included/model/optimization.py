@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from enum import Enum
 from functools import cached_property
-from itertools import pairwise
-from typing import Any, Literal, Self
+from itertools import pairwise, product
+from typing import Any, Literal, NamedTuple, Self
 
 import linopy
 import pandas as pd
@@ -557,15 +557,21 @@ class ExtractionError(Exception):
     """Indicate a problem in retrieving data from the solved model"""
 
 
+class Bid(NamedTuple):
+    time: Any
+    direction: BidDirection
+    quantity: float
+    price: float
+
+
+_bound_definition = "bound", ("lower", "upper")
+
+
 @dataclass
 class Solution:
     _model_builder: ModelBuilder
 
-    def plausible_bidding_prices(
-        self,
-        margin: None | float,
-        remove_quantity_bids_below: None | float,
-    ) -> xr.DataArray:
+    def _bidding_prices(self) -> xr.DataArray:
         model_builder = self._model_builder
         bid_accepted = model_builder._var_bid_accepted
 
@@ -575,16 +581,18 @@ class Solution:
                 "(_var_bid_accepted has no solution)"
             )
 
+        bounds_name, [bound_lower, bound_upper] = _bound_definition
+
         price_bid = xr.DataArray(
             dims=[
                 model_builder._idx_time.name,
                 model_builder._idx_direction.name,
-                "bounds",
+                bounds_name,
             ],
             coords=[
                 model_builder._idx_time.values,
                 model_builder._idx_direction.values,
-                ["lower", "upper"],
+                [bound_lower, bound_upper],
             ],
         )
 
@@ -595,56 +603,94 @@ class Solution:
             bid_accepted.solution < 0.5
         )
 
-        price_bid.sel(
-            {
-                model_builder._idx_direction.name: BidDirection.sell.value,
-                "bounds": "lower",
-            }
-        ).loc[:] = rejected_prices.max(dim=[model_builder._idx_scenario.name]).sel(
-            {model_builder._idx_direction.name: BidDirection.sell.value}
-        )
-        price_bid.sel(
-            {
-                model_builder._idx_direction.name: BidDirection.sell.value,
-                "bounds": "upper",
-            }
-        ).loc[:] = accepted_prices.min(dim=[model_builder._idx_scenario.name]).sel(
-            {model_builder._idx_direction.name: BidDirection.sell.value}
-        )
+        assert (
+            model_builder._idx_time.name,
+            model_builder._idx_direction.name,
+            bounds_name,
+        ) == tuple(price_bid.coords), "the implementation below assumes this order"
 
-        price_bid.sel(
-            {
-                model_builder._idx_direction.name: BidDirection.buy.value,
-                "bounds": "upper",
-            }
-        ).loc[:] = rejected_prices.min(dim=[model_builder._idx_scenario.name]).sel(
-            {model_builder._idx_direction.name: BidDirection.buy.value}
-        )
-        price_bid.sel(
-            {
-                model_builder._idx_direction.name: BidDirection.buy.value,
-                "bounds": "lower",
-            }
-        ).loc[:] = accepted_prices.max(dim=[model_builder._idx_scenario.name]).sel(
-            {model_builder._idx_direction.name: BidDirection.buy.value}
-        )
+        sell = BidDirection.sell.value
+        buy = BidDirection.buy.value
 
-        if margin is not None:
-            price_bid.sel({"bounds": "lower"}).loc[:] = price_bid.sel(
-                {"bounds": "lower"}
-            ).fillna(price_bid.sel({"bounds": "upper"}) - 2 * margin)
-            price_bid.sel({"bounds": "upper"}).loc[:] = price_bid.sel(
-                {"bounds": "upper"}
-            ).fillna(price_bid.sel({"bounds": "lower"}) + 2 * margin)
+        price_bid.loc[:, sell, bound_lower] = rejected_prices.max(
+            dim=[model_builder._idx_scenario.name]
+        ).sel({model_builder._idx_direction.name: sell})
 
-        price_bid = price_bid.mean(dim=["bounds"])
+        price_bid.loc[:, sell, bound_upper] = accepted_prices.min(
+            dim=[model_builder._idx_scenario.name]
+        ).sel({model_builder._idx_direction.name: sell})
 
-        if remove_quantity_bids_below is not None:
-            price_bid = price_bid.where(
-                model_builder._var_bid_quantity.solution >= remove_quantity_bids_below
-            )
+        price_bid.loc[:, buy, bound_upper] = rejected_prices.min(
+            dim=[model_builder._idx_scenario.name]
+        ).sel({model_builder._idx_direction.name: buy})
+
+        price_bid.loc[:, buy, bound_lower] = accepted_prices.max(
+            dim=[model_builder._idx_scenario.name]
+        ).sel({model_builder._idx_direction.name: buy})
 
         return price_bid
+
+    def _bidding_prices_aggregated(
+        self,
+        margin: float,
+    ) -> xr.DataArray:
+        price_bid = self._bidding_prices()
+
+        bounds_name, [bound_lower, bound_upper] = _bound_definition
+
+        price_bid.sel({bounds_name: bound_lower}).loc[:] = price_bid.sel(
+            {bounds_name: bound_lower}
+        ).fillna(price_bid.sel({bounds_name: bound_upper}) - 2 * margin)
+        price_bid.sel({bounds_name: bound_upper}).loc[:] = price_bid.sel(
+            {bounds_name: bound_upper}
+        ).fillna(price_bid.sel({bounds_name: bound_lower}) + 2 * margin)
+
+        price_bid = price_bid.mean(dim=[bounds_name])
+
+        return price_bid
+
+    def _bid_mask(self, remove_quantity_bids_below: float):
+        model_builder = self._model_builder
+        return model_builder._var_bid_quantity.solution >= remove_quantity_bids_below
+
+    def collect_bids(
+        self, margin: float, remove_quantity_bids_below: float
+    ) -> list[Bid]:
+        model_builder = self._model_builder
+
+        prices: xr.DataArray = self._bidding_prices_aggregated(margin=margin)
+        quantities: xr.DataArray = model_builder._var_bid_quantity.solution
+
+        directions = model_builder._idx_direction
+        times = model_builder._idx_time
+
+        mask = self._bid_mask(remove_quantity_bids_below=remove_quantity_bids_below)
+
+        return [
+            Bid(
+                time=time,
+                direction=BidDirection(direction),
+                quantity=quantities.sel(
+                    {
+                        times.name: time,
+                        directions.name: direction,
+                    }
+                ).item(),
+                price=prices.sel(
+                    {
+                        times.name: time,
+                        directions.name: direction,
+                    }
+                ).item(),
+            )
+            for time, direction in product(times, directions)
+            if mask.sel(
+                {
+                    times.name: time,
+                    directions.name: direction,
+                }
+            ).item()
+        ]
 
     def objective(self):
         return self._model_builder._model.objective.value
