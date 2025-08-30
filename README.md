@@ -5,8 +5,7 @@ This project started as an experiment with new tools and design patterns. It beg
 
 
 ## Why is this interesting?
-
-The Day-Ahead electricity market in Europe is organized as a pay-as-clear auction. This means that every accepted bid is settled at the market’s clearing price. For a battery bidding is not trivial because accepted buy bids translate into charging, accepted sell bids translate into discharging, and the battery must respect its physical constraints.
+The Day-Ahead electricity market in Europe is organized as a pay-as-clear auction, where bids are settled at the market’s clearing price. For a battery, bidding is complex because accepted buy bids translate into charging, accepted sell bids translate into discharging, and physical constraints must be respected. Of course, deviations between trading and physical activity can be mitigated in shorter-term markets, and imbalances introduce additional risk considerations rather than absolute constraints. Despite these factors, the question of designing an optimal bidding strategy under price uncertainty in the context of auctions remains highly interesting.
 
 Whether a bid is accepted depends on its bid price compared to the auction clearing price, which is uncertain in advance. How do we find a suitable bidding strategy when the clearing price is uncertain?  
 
@@ -15,7 +14,6 @@ If we represent the uncertainty of market prices with a set of representative sc
 _**Choose one bidding strategy** (a set of price-quantity offers), such that it **maximizes expected profit** across all scenarios, while ensuring that the implied dispatch is physically feasible in **each individual scenario**._
 
 ## Example
-
 Take the exmple below showing three price scenarios (and the optimized bidding strategy). The proposed approach differs from two common benchmarks. On the one hand, **optimizing dispatch individually per scenario** (perfect foresight) gives the highest possible profit (472 €), but it is infeasible since only one bidding strategy can be submitted. On the other hand, **optimizing a single deterministic dispatch** for underestimates the potential profits (358 €). By contrast, **optimizing the bidding strategy across scenarios** yields the best feasible outcome under market rules (406 €).
 
 ![price](https://github.com/user-attachments/assets/ab91b084-ba13-4594-918b-217e9992e1b7)
@@ -280,13 +278,14 @@ The resulting dataframe should look something like this:
 
 The model is formulated as a a **stochastic mixed-integer linear program (MILP)** using [linopy](https://github.com/PyPSA/linopy).
 
+
 ## Nomenclature
 | <div style="width:290px">Sets and Indices</div>   |<div style="width:290px">Sets and Indices</div>|
 | -------------------------------------             | -|
 | $t \in T$                                         | time steps
 | $s \in S$                                         | price scenarios
-| $d \in \{\text{buy}, \text{sell}\}$               | bid direction  
-| $p \in \{\text{long}, \text{short}\}$             | imbalance position
+| $`d \in \{\text{buy}, \text{sell}\}`$               | bid direction  
+| $`p \in \{\text{long}, \text{short}\}`$             | imbalance position
 
 | <div style="width:290px">Parameters</div>         | <div style="width:290px">Sets and Indices</div>|
 | -                                                 | -|
@@ -306,7 +305,7 @@ The model is formulated as a a **stochastic mixed-integer linear program (MILP)*
 |$q_{t,d} \in [0, P^{\max}]$                        | bid quantity  
 |$q^{\text{acc}}_{t,d,s}$                           | accepted bid quantity  
 |$p_{t,d}$                                          | bid price  
-|$a_{t,d,s} \in \{0,1\}$                            | bid acceptance indicator  
+|$`a_{t,d,s} \in \{0,1\}`$                            | bid acceptance indicator  
 |$\text{imbalance}_{t,d,s,p} \ge 0$                 | imbalance variables  
 
 ## Storage Dynamics
