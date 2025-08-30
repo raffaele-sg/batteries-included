@@ -18,6 +18,7 @@ _**Choose one bidding strategy** (a set of price-quantity offers), such that it 
 
 Take the exmple below showing three price scenarios (and the optimized bidding strategy). The proposed approach differs from two common benchmarks. On the one hand, **optimizing dispatch individually per scenario** (perfect foresight) gives the highest possible profit (472 €), but it is infeasible since only one bidding strategy can be submitted. On the other hand, **optimizing a single deterministic dispatch** for underestimates the potential profits (358 €). By contrast, **optimizing the bidding strategy across scenarios** yields the best feasible outcome under market rules (406 €).
 
+![price](https://github.com/user-attachments/assets/ab91b084-ba13-4594-918b-217e9992e1b7)
 
 # Quickstart
 
@@ -275,10 +276,9 @@ The resulting dataframe should look something like this:
 </table>
 
 
-# Formulation
+# Formulation Overview
 
-This repository implements an optimization model for **battery bidding in electricity markets under price uncertainty**.  
-The model is a **stochastic mixed-integer linear program (MILP)** using [linopy](https://github.com/PyPSA/linopy).
+The model is formulated as a a **stochastic mixed-integer linear program (MILP)** using [linopy](https://github.com/PyPSA/linopy).
 
 ## Nomenclature
 | <div style="width:290px">Sets and Indices</div>   |<div style="width:290px">Sets and Indices</div>|
@@ -310,12 +310,11 @@ The model is a **stochastic mixed-integer linear program (MILP)** using [linopy]
 |$\text{imbalance}_{t,d,s,p} \ge 0$                 | imbalance variables  
 
 ## Storage Dynamics
-For all $t \in T, s \in S$:
-$$
-\text{level}_{t,s} - \text{level}_{t-1,s}
-= \Delta t \left( \eta^{\text{ch}} \cdot \text{dispatch}_{t,\text{buy},s}
-- \frac{1}{\eta^{\text{dis}}} \cdot \text{dispatch}_{t,\text{sell},s} \right),
-$$
+For all $`t \in T, s \in S`$:
+
+```math
+\text{level}_{t,s} - \text{level}_{t-1,s} = \Delta t \left( \eta^{\text{ch}} \cdot \text{dispatch}_{t,\text{buy},s} - \frac{1}{\eta^{\text{dis}}} \cdot \text{dispatch}_{t,\text{sell},s} \right),
+```
 with initialization via $\text{level}^{\text{init}}$ and a disired final state.
 
 
@@ -323,47 +322,49 @@ with initialization via $\text{level}^{\text{init}}$ and a disired final state.
 
 The accepted bid quantity should equal the offered bid quantity if the bid is accepted, and zero otherwise:
 
-$$
+```math
 q^{\text{acc}}_{t,d,s} = q_{t,d} \cdot a_{t,d,s}.
-$$
+```
 
 This is a **bilinear relation**, which is not directly supported in a linear MILP solver. To preserve linearity, we reformulate it using the **Big-M method**. Let $M = P^{\max}$ (the maximum possible bid quantity). Then the following set of linear inequalities ensures equivalence:
-$$
+```math
 \begin{aligned}
 & q^{\text{acc}}_{t,d,s} \ge -M \cdot a_{t,d,s} \\
 & q^{\text{acc}}_{t,d,s} \le M \cdot a_{t,d,s} \\
 & q^{\text{acc}}_{t,d,s} \ge q_{t,d} - M \cdot (1 - a_{t,d,s}) \\
 & q^{\text{acc}}_{t,d,s} \le q_{t,d} + M \cdot (1 - a_{t,d,s})
 \end{aligned}
-$$
+```
 
 Interpretation:
-- If $a_{t,d,s} = 0$ (bid not accepted), then the constraints enforce $q^{\text{acc}}_{t,d,s} = 0$.  
-- If $a_{t,d,s} = 1$ (bid accepted), then the constraints enforce $q^{\text{acc}}_{t,d,s} = q_{t,d}$.  
+- If $`a_{t,d,s} = 0`$ (bid not accepted), then the constraints enforce $`q^{\text{acc}}_{t,d,s} = 0`$.  
+- If $`a_{t,d,s} = 1`$ (bid accepted), then the constraints enforce $`q^{\text{acc}}_{t,d,s} = q_{t,d}`$.  
 
 
 ## Bid Price Consistency (Monotonicity)
 
-Bid acceptance must follow a **monotonicity rule**. Scenarios are sorted by increasing price $\pi_{t,s}$ at time $t$ and direction $d$. For consecutive scenarios $s_\text{low}$ (lower price) and $s_\text{high}$ (higher price), the following constraints are imposed:
+Bid acceptance must follow a **monotonicity rule**. Scenarios are sorted by increasing price $\pi_{t,s}$ at time $t$ and direction $d$. For consecutive scenarios $`s_\text{low}`$ (lower price) and $`s_\text{high}`$ (higher price), the following constraints are imposed:
 
-- **Buy bids:** if the bid is accepted at a *higher* price, then it must also be accepted at any *lower* price ($ a_{t,\text{buy},s_\text{low}} \ge a_{t,\text{buy},s_\text{high}} $).
-- **Sell bids:** if the bid is accepted at a *lower* price, then it must also be accepted at any *higher* price ($ a_{t,\text{sell},s_\text{low}} \le a_{t,\text{sell},s_\text{high}}$).
+- **Buy bids:** if the bid is accepted at a *higher* price, then it must also be accepted at any *lower* price ($`a_{t,\text{buy},s_\text{low}} \ge a_{t,\text{buy},s_\text{high}}`$).
+- **Sell bids:** if the bid is accepted at a *lower* price, then it must also be accepted at any *higher* price ($`a_{t,\text{sell},s_\text{low}} \le a_{t,\text{sell},s_\text{high}}`$).
 
 
 ## Imbalance Constraints
 Deviations between dispatch and accepted bids:
-$$
+
+```math
 \text{imbalance}_{t,d,s,\text{long}} - \text{imbalance}_{t,d,s,\text{short}}
 = \text{dispatch}_{t,d,s} - q^{\text{acc}}_{t,d,s}.
-$$
+```
 
 ## Objective Function
 Maximize expected market profit minus expected imbalance penalties:
-$$
+
+```math
 \max \;
 \Delta t \sum_{t,s} \rho_s \left(
-q^{\text{acc}}_{t,\text{sell},s}\,\pi_{t,s}
-- q^{\text{acc}}_{t,\text{buy},s}\,\pi_{t,s}
+q^{\text{acc}}_{t,\text{sell},s} \pi_{t,s}
+- q^{\text{acc}}_{t,\text{buy},s} \pi_{t,s}
 \right)
 - \lambda \sum_{t,d,s,p} \Delta t \,\rho_s \,\text{imbalance}_{t,d,s,p}.
-$$
+```
