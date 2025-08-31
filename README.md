@@ -279,36 +279,33 @@ The resulting dataframe should look something like this:
 The model is formulated as a a **stochastic mixed-integer linear program (MILP)** using [linopy](https://github.com/PyPSA/linopy).
 
 
-## Nomenclature
-| <div style="width:290px">Sets and Indices</div>   |<div style="width:290px">Sets and Indices</div>|
-| -------------------------------------             | -|
-| $t \in T$                                         | time steps
-| $s \in S$                                         | price scenarios
-| $`d \in \{\text{buy}, \text{sell}\}`$               | bid direction  
-| $`p \in \{\text{long}, \text{short}\}`$             | imbalance position
+### Nomenclature
 
-| <div style="width:290px">Parameters</div>         | <div style="width:290px">Sets and Indices</div>|
-| -                                                 | -|
-| $P^{\max}$                                        | charging/discharging power limit  
-| $E^{\max}$                                        | energy capacity  
-| $\eta^{\text{ch}}, \eta^{\text{dis}}$             | charging/discharging efficiencies  
-| $\pi_{t,s}$                                       | market price at time $t$ in scenario $s$  
-| $\rho_s$                                          | probability of scenario $s$  
-| $\Delta t$                                        | time-step duration (hours)  
-| $\lambda$                                         | imbalance penalty  
+|                       | Notation                                  | Description                               |
+|-                      | -                                         | -                                         |
+|**Sets and Indices**   |                                           |                                           |
+|                       | $t \in T$                                 | time steps                                |
+|                       | $s \in S$                                 | price scenarios                           |
+|                       | $`d \in \{\text{buy}, \text{sell}\}`$     | bid direction                             |
+|                       | $`p \in \{\text{long}, \text{short}\}`$   | imbalance position                        |
+|**Parameters**         |                                           |                                           |
+|                       | $P^{\max}$                                | charging/discharging power limit          |
+|                       | $E^{\max}$                                | energy capacity                           |
+|                       | $\eta^{\text{ch}}, \eta^{\text{dis}}$     | charging/discharging efficiencies         |
+|                       | $\pi_{t,s}$                               | market price at time $t$ in scenario $s$  |
+|                       | $\rho_s$                                  | probability of scenario $s$               |
+|                       | $\Delta t$                                | time-step duration (hours)                |
+|                       | $\lambda$                                 | imbalance penalty                         |
+|**Decision Variables** |                                           |                                           |
+|                       |$\text{dispatch}_{t,d,s} \in [0, P^{\max}]$| actual power dispatched (buy/sell)        |
+|                       |$\text{level}_{t,s} \in [0, E^{\max}]$     | state of charge                           |
+|                       |$q_{t,d} \in [0, P^{\max}]$                | bid quantity                              |
+|                       |$q^{\text{acc}}_{t,d,s}$                   | accepted bid quantity                     |
+|                       |$p_{t,d}$                                  | bid price                                 |
+|                       |$`a_{t,d,s} \in \{0,1\}`$                  | bid acceptance indicator                  |
+|                       |$\text{imbalance}_{t,d,s,p} \ge 0$         | imbalance variables                       |
 
-
-| <div style="width:290px">Decision Variables</div> | <div style="width:290px">Sets and Indices</div>|
-| -                                                 | -|
-|$\text{dispatch}_{t,d,s} \in [0, P^{\max}]$        | actual power dispatched (buy/sell)  
-|$\text{level}_{t,s} \in [0, E^{\max}]$             | state of charge  
-|$q_{t,d} \in [0, P^{\max}]$                        | bid quantity  
-|$q^{\text{acc}}_{t,d,s}$                           | accepted bid quantity  
-|$p_{t,d}$                                          | bid price  
-|$`a_{t,d,s} \in \{0,1\}`$                            | bid acceptance indicator  
-|$\text{imbalance}_{t,d,s,p} \ge 0$                 | imbalance variables  
-
-## Storage Dynamics
+### Storage Dynamics
 For all $`t \in T, s \in S`$:
 
 ```math
@@ -317,7 +314,7 @@ For all $`t \in T, s \in S`$:
 with initialization via $\text{level}^{\text{init}}$ and a disired final state.
 
 
-## Bid Acceptance Logic
+### Bid Acceptance Logic
 
 The accepted bid quantity should equal the offered bid quantity if the bid is accepted, and zero otherwise:
 
@@ -340,7 +337,7 @@ Interpretation:
 - If $`a_{t,d,s} = 1`$ (bid accepted), then the constraints enforce $`q^{\text{acc}}_{t,d,s} = q_{t,d}`$.  
 
 
-## Bid Price Consistency (Monotonicity)
+### Bid Price Consistency (Monotonicity)
 
 Bid acceptance must follow a **monotonicity rule**. Scenarios are sorted by increasing price $\pi_{t,s}$ at time $t$ and direction $d$. For consecutive scenarios $`s_\text{low}`$ (lower price) and $`s_\text{high}`$ (higher price), the following constraints are imposed:
 
@@ -348,7 +345,7 @@ Bid acceptance must follow a **monotonicity rule**. Scenarios are sorted by incr
 - **Sell bids:** if the bid is accepted at a *lower* price, then it must also be accepted at any *higher* price ($`a_{t,\text{sell},s_\text{low}} \le a_{t,\text{sell},s_\text{high}}`$).
 
 
-## Imbalance Constraints
+### Imbalance Constraints
 Deviations between dispatch and accepted bids:
 
 ```math
@@ -356,7 +353,7 @@ Deviations between dispatch and accepted bids:
 = \text{dispatch}_{t,d,s} - q^{\text{acc}}_{t,d,s}.
 ```
 
-## Objective Function
+### Objective Function
 Maximize expected market profit minus expected imbalance penalties:
 
 ```math
