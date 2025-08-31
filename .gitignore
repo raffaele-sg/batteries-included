@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+*.ipynb
 
 # custom folders
 .venv*/
@@ -12,3 +13,4 @@ wheels/
 
 # Custom files
 quick_check.sh
+example.py
