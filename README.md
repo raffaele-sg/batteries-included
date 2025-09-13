@@ -22,7 +22,7 @@ Take the exmple below showing three price scenarios (and the optimized bidding s
 
 ### Installation
 ```bash
-pip install git+https://github.com/raffaele-sg/batteries-included.git@v1.0.0-alpha
+pip install git+https://github.com/raffaele-sg/batteries-included.git@v1.1.0-alpha
 ```
 
 The package can be installed directly from GitHub using the command above. This installation method is intended for experimentation and research purposes, and is **not suited for production systems**. If you are interested in using this code in a production environment, please reach out to discuss a suitable distribution and support.  
@@ -107,7 +107,10 @@ solution = (
         battery=battery,
         price_scenarios=price_scenarios,
     )
-    .constrain_storage_level(soc_start=("==", 0.5), soc_end=(">=", 0.5))
+    .constrain_storage_level(
+        soc_start=("==", 0.5),
+        soc_end=(">=", 0.5),
+    )
     .constrain_bidding_strategy()
     .constrain_imbalance()
     .add_objective(penalize_imbalance=1000.0)
@@ -337,7 +340,7 @@ Interpretation:
 - If $`a_{t,d,s} = 1`$ (bid accepted), then the constraints enforce $`q^{\text{acc}}_{t,d,s} = q_{t,d}`$.  
 
 
-### Bid Price Consistency (Monotonicity)
+### Bid Price Consistency
 
 Bid acceptance must follow a **monotonicity rule**. Scenarios are sorted by increasing price $\pi_{t,s}$ at time $t$ and direction $d$. For consecutive scenarios $`s_\text{low}`$ (lower price) and $`s_\text{high}`$ (higher price), the following constraints are imposed:
 
@@ -358,9 +361,9 @@ Maximize expected market profit minus expected imbalance penalties:
 
 ```math
 \max \;
-\Delta t \sum_{t,s} \rho_s \left(
+\Delta t \left( \sum_{t,s} \rho_s \left(
 q^{\text{acc}}_{t,\text{sell},s} \pi_{t,s}
 - q^{\text{acc}}_{t,\text{buy},s} \pi_{t,s}
 \right)
-- \lambda \sum_{t,d,s,p} \Delta t \,\rho_s \,\text{imbalance}_{t,d,s,p}.
+- \lambda \sum_{t,d,s,p} \,\rho_s \,\text{imbalance}_{t,d,s,p} \right).
 ```
