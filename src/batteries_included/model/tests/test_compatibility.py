@@ -70,7 +70,10 @@ def test_v1():
             battery=battery,
             price_scenarios=price_scenarios,
         )
-        .constrain_storage_level(soc_start=("==", 0.5), soc_end=(">=", 0.5))
+        .constrain_storage_level(
+            soc_start=("==", 0.5),
+            soc_end=(">=", 0.5),
+        )
         .constrain_bidding_strategy()
         .constrain_imbalance()
         .add_objective(penalize_imbalance=1000.0)

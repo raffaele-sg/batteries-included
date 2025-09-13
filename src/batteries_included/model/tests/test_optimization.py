@@ -22,6 +22,7 @@ def create_battery():
         duration=timedelta(hours=2),
         power=2.0,
         efficiency=0.9,
+        variable_cost=1.0,
     )
 
 
@@ -29,18 +30,18 @@ def create_price_scenarios():
     return TimeSeries(
         start=None,
         resolution=timedelta(minutes=15),
-        values=[(sin(pi * 2 * i / 96), 20.0) for i in range(96)],
+        values=[(sin(pi * 2 * i / 24), 20.0) for i in range(96)],
     )
 
 
 def create_price_scenarios_with_probaility(start: None | datetime):
-    n = 96
+    n = 24
     price_scenario_1 = Scenario(
         probability=0.1,
         value=TimeSeries(
             start=start,
             resolution=timedelta(minutes=15),
-            values=[sin(pi * 2 * i / 96) for i in range(n)],
+            values=[sin(pi * 2 * i / n) for i in range(n)],
         ),
     )
     price_scenario_2 = Scenario(
@@ -129,6 +130,62 @@ def test_model_quantity_balance(solution: Solution):
 
     print(model_builder._model.status)
     assert ((dispatch - quantity_accepted - imbalance) == 0.0).all().item()
+
+
+def test_simultenous_charge_and_discharge():
+    start = None
+    n = 24
+
+    battery = Battery(
+        duration=timedelta(hours=2),
+        power=2.0,
+        efficiency=0.9,
+        variable_cost=0,
+    )
+
+    price_scenario_1 = Scenario(
+        probability=0.4,
+        value=TimeSeries(
+            start=start,
+            resolution=timedelta(minutes=15),
+            values=[sin(pi * 2 * i / 24) - 100 for i in range(n)],
+        ),
+    )
+    price_scenario_2 = Scenario(
+        probability=0.6,
+        value=TimeSeries(
+            start=start,
+            resolution=timedelta(minutes=15),
+            values=[20.0 for _ in range(n)],
+        ),
+    )
+
+    price_scenarios = PriceScenarios({1: price_scenario_1, 2: price_scenario_2})
+
+    solution = (
+        ModelBuilder(battery=battery, price_scenarios=price_scenarios)
+        .constrain_storage_level(soc_start=("==", 0.5), soc_end=("==", 0.5))
+        .constrain_bidding_strategy()
+        .constrain_imbalance()
+        .add_objective(penalize_imbalance=1000.0)
+        .solve()
+    )
+
+    assert solution._simultanous_actvity()
+
+    solution = (
+        ModelBuilder(battery=battery, price_scenarios=price_scenarios)
+        .constrain_storage_level(soc_start=("==", 0.5), soc_end=("==", 0.5))
+        .constrain_bidding_strategy()
+        .constrain_simultanous_dispatch()
+        .constrain_imbalance()
+        .add_objective(penalize_imbalance=1000.0)
+        .solve()
+    )
+
+    solution._model_builder._var_dispatch.solution.min("direction").max()
+
+    assert not solution._simultanous_actvity()
 
 
 if __name__ == "__main__":
