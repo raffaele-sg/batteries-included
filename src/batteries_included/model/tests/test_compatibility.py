@@ -60,6 +60,7 @@ def test_v1():
         duration=timedelta(hours=2.0),
         power=2.0,  # MW
         efficiency=0.9,  # Round-trip
+        variable_cost=0.0,  # E.g. degradation, EUR/MWh
     )
 
     # Section 3

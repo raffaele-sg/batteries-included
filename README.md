@@ -32,7 +32,6 @@ The package can be installed directly from GitHub using the command above. This 
 from datetime import datetime, timedelta
 from batteries_included.model.common import PriceScenarios, Scenario, TimeSeries
 
-
 start = datetime(1981, 9, 21)
 resolution = timedelta(hours=1)
 
@@ -86,21 +85,20 @@ Scenarios can be defined by assigning each a probability (with all probabilities
 ```python
 from batteries_included.model.common import Battery
 
-
 battery = Battery(
     duration=timedelta(hours=2.0),
-    power=2.0,      # MW
-    efficiency=0.9, # Round-trip
+    power=2.0,            # MW
+    efficiency=0.9,       # Round-trip
+    variable_cost=0.0,    # E.g. degradation, EUR/MWh  
 )
 ```
 
-The battery is characterized by its duration (i.e. the time it can discharge at full power), its power capacity in MW, and its round-trip efficiency (the fraction of energy lost after a full charge–discharge cycle).
+The battery is characterized by its duration (i.e. the time it can discharge at full power), its power capacity in MW, its round-trip efficiency (the fraction of energy lost after a full charge–discharge cycle), and its variable cost, which can be used to represent operating costs such as degradation.
 
 
 ### Model definition and solution
 ```python
 from batteries_included.model.optimization import ModelBuilder
-
 
 solution = (
     ModelBuilder(
@@ -118,13 +116,19 @@ solution = (
 )
 ```
 
-The `ModelBuilder` brings together the battery and the price scenarios to formulate and solve the optimization problem. Constraints can be added step by step: in the example above, the storage level is fixed to start at 50% and end at least at 50%, a bidding strategy is enforced, and imbalances are allowed with a penalty cost. The method `.solve()` then computes the optimal bidding strategy and resulting dispatch.  
+The `ModelBuilder` brings together the battery and the price scenarios to formulate and solve the optimization problem. Constraints can be added step by step: in the example above, the storage level is fixed to start at 50% and end at least at 50%, a bidding strategy is enforced, and imbalances are allowed with a penalty cost. The method `.solve()` then computes the optimal bidding strategy and resulting dispatch.
 
 Importantly, the choice of constraints determines the type of benchmark being simulated:  
 - Removing `.constrain_bidding_strategy()` simulates profits when dispatch is free to vary by scenario (perfect foresight).  
 - Replacing `.constrain_bidding_strategy()` with `.constrain_dispatch_across_scenarios()` simulates one single deterministic dispatch across all scenarios (no bidding strategy).  
 
 These variations correspond to the three cases illustrated in the **Example** section of the README.
+
+ℹ️ **Simultaneous charging and discharging**
+
+By default, the optimization may find solutions that involve simultaneous charging and discharging. A common edge case occurs when variable costs are negligible and prices turn negative: in this situation, the model is incentivized to maximize energy losses by charging and discharging at the same time. Whenever such simultaneous dispatch is detected, a warning is generated.
+
+This behavior can be prevented by adding `.constrain_simultaneous_dispatch()`. However, note that this introduces additional binary constraints, which increase computational complexity and may slow down the solver.
 
 
 ### Extract the bidding strategy
