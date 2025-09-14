@@ -365,9 +365,15 @@ Maximize expected market profit minus expected imbalance penalties:
 
 ```math
 \max \;
-\Delta t \left( \sum_{t,s} \rho_s \left(
-q^{\text{acc}}_{t,\text{sell},s} \pi_{t,s}
-- q^{\text{acc}}_{t,\text{buy},s} \pi_{t,s}
+\sum_{s} 
+\left(
+  \rho_s 
+  \sum_{t} 
+\left(
+  q^{\text{acc}}_{t,\text{sell},s} \pi_{t,s}
+  - q^{\text{acc}}_{t,\text{buy},s} \pi_{t,s}
+  - \lambda \sum_{d,p} \, \text{imbalance}_{t,d,s,p}
 \right)
-- \lambda \sum_{t,d,s,p} \,\rho_s \,\text{imbalance}_{t,d,s,p} \right).
+\right)
+.
 ```
