@@ -308,7 +308,6 @@ The model is formulated as a a **stochastic mixed-integer linear program (MILP)*
 |                       |$\text{level}_{t,s} \in [0, E^{\max}]$     | state of charge                           |
 |                       |$q_{t,d} \in [0, P^{\max}]$                | bid quantity                              |
 |                       |$q^{\text{acc}}_{t,d,s}$                   | accepted bid quantity                     |
-|                       |$p_{t,d}$                                  | bid price                                 |
 |                       |$`a_{t,d,s} \in \{0,1\}`$                  | bid acceptance indicator                  |
 |                       |$\text{imbalance}_{t,d,s,p} \ge 0$         | imbalance variables                       |
 
