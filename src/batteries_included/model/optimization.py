@@ -106,6 +106,21 @@ class ModelBuilder:
         )
 
     @cached_property
+    def _var_is_dispatch_sell(self) -> linopy.Variable:
+        """
+        Flags if the battery is discharging
+
+        Dims:
+        - time
+        - scenario
+        """
+        return self._model.add_variables(
+            name="is dispatch sell",
+            binary=True,
+            coords=[self._idx_time, self._idx_scenario],
+        )
+
+    @cached_property
     def _var_level(self) -> linopy.Variable:
         """
         Actual storage level by time and scenario
@@ -474,6 +489,30 @@ class ModelBuilder:
         self._constrain_bid_quantity_accepted()
         return self
 
+    def constrain_simultanous_dispatch(self) -> Self:
+        direction_name = self._idx_direction.name
+        m = self._model
+        battery = self.battery
+
+        charging = self._var_dispatch.sel({direction_name: BidDirection.buy.value})
+        discharging = self._var_dispatch.sel({direction_name: BidDirection.sell.value})
+        is_discharging = self._var_is_dispatch_sell
+
+        m.add_constraints(
+            lhs=charging - battery.power * (-is_discharging + 1),
+            sign="<=",
+            rhs=0,
+            name="can charge",
+        )
+        m.add_constraints(
+            lhs=discharging - battery.power * (is_discharging),
+            sign="<=",
+            rhs=0,
+            name="can discharge",
+        )
+
+        return self
+
     def constrain_imbalance(self) -> Self:
         imbalance = self._var_imbalance
         m = self._model
@@ -527,16 +566,36 @@ class ModelBuilder:
 
         return time_scaling * probabilities_xr * imbalance
 
+    def expected_variable_costs(self) -> linopy.LinearExpression:
+        time_scaling = self.price_scenarios.resolution / timedelta(hours=1)
+        dispatch = self._var_dispatch
+        probabilities_xr = xr.DataArray(
+            self.price_scenarios.probabilities,
+            coords={self._idx_scenario.name: self._idx_scenario},
+            dims=[self._idx_scenario.name],
+        )
+        battery = self.battery
+
+        return (
+            time_scaling
+            * battery.variable_cost
+            * 0.5  # To avid double counting when summing charging and discharging
+            * dispatch.sum(
+                dim=self._idx_direction.name,  # type: ignore
+            )
+            * probabilities_xr
+        )
+
     def add_objective(self, penalize_imbalance: float) -> Self:
         if penalize_imbalance < abs(self.price_scenarios.data_array).max():
             logging.warning(
                 "The imbalance penalty is lower the the highest (abs) price"
             )
 
-        imbalance_cost = penalize_imbalance * self.expected_imbalance().sum()
-
         self._model.add_objective(
-            self.expected_trade_profits() - imbalance_cost,
+            self.expected_trade_profits().sum()
+            - self.expected_variable_costs().sum()
+            - penalize_imbalance * self.expected_imbalance().sum(),
             sense="max",
         )
 
@@ -544,12 +603,6 @@ class ModelBuilder:
 
     def solve(self) -> Solution:
         self._model.solve(output_flag=False)
-
-        if self._var_imbalance.solution.max() > 0:
-            logging.warning(
-                "Probably some imbalances occurred somewhere, consider increasing the penaly"
-            )
-
         return Solution(self)
 
 
@@ -570,6 +623,27 @@ _bound_definition = "bound", ("lower", "upper")
 @dataclass
 class Solution:
     _model_builder: ModelBuilder
+
+    def __post_init__(self):
+        if self._has_imbalance():
+            logging.warning(
+                "Probably some imbalances occurred somewhere, consider increasing the penaly"
+            )
+
+        if self._simultanous_actvity():
+            logging.warning(
+                "Seems like there is simultanous charging and discharging (try adding .constrain_simultanous_dispatch)"
+            )
+
+    def _has_imbalance(self) -> bool:
+        return self._model_builder._var_imbalance.solution.max() > 1e-06
+
+    def _simultanous_actvity(self) -> bool:
+        """Checks if at some point simultanous charge and discharge is occuring"""
+        return (
+            self._model_builder._var_dispatch.solution.min(dim="direction").max().item()
+            > 1e-06
+        )
 
     def _bidding_prices(self) -> xr.DataArray:
         model_builder = self._model_builder

@@ -17,8 +17,11 @@ EURperMWh = float
 
 class Battery(NamedTuple):
     duration: timedelta  # The time it takes to fully discharge the battery
-    power: MW  # represents both, charging and discharing, in kW
+    power: MW  # represents both, charging and discharging, in kW
     efficiency: float  # Share of energy losses (round-trip)
+
+    # TODO: variable cost has a default value of 0 for backwards compatibility
+    variable_cost: float = 0  # Cost (e.g. degradation) per energy, in EUR/MWh
 
     @property
     def size(self) -> MWh:
@@ -31,14 +34,6 @@ class Battery(NamedTuple):
     @property
     def efficiency_discharge(self):
         return self.efficiency**0.5
-
-    @classmethod
-    def example(cls: Type[Battery]):
-        return cls(
-            duration=timedelta(hours=2),
-            power=2.0,
-            efficiency=0.9,
-        )
 
 
 class TimeSeries[T](NamedTuple):
